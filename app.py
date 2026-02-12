@@ -194,43 +194,67 @@ def detect_scene_changes(transcript_data, session_id):
 
 
 def generate_image_imagen(prompt, output_path, session_id, scene_num):
-    """Generate a still image using Google Imagen API."""
+    """Generate a still image using Gemini's native image generation."""
     try:
         client = genai.Client(api_key=GOOGLE_API_KEY)
 
         full_prompt = f"{STYLE_PROMPT} Scene: {prompt}"
         
-        logger.info(f"Imagen request for scene {scene_num}: {full_prompt[:100]}...")
+        logger.info(f"Image generation request for scene {scene_num}")
 
-        response = client.models.generate_images(
-            model='imagen-3.0-generate-002',
-            prompt=full_prompt,
-            config=types.GenerateImagesConfig(
-                number_of_images=1,
-                aspect_ratio='16:9',
-                safety_filter_level='BLOCK_ONLY_HIGH',
+        response = client.models.generate_content(
+            model="gemini-2.0-flash-exp",
+            contents=full_prompt,
+            config=types.GenerateContentConfig(
+                response_modalities=['Image', 'Text']
             )
         )
 
-        logger.info(f"Imagen response for scene {scene_num}: {response}")
+        # Extract image from response parts
+        image_saved = False
+        if response.candidates and response.candidates[0].content and response.candidates[0].content.parts:
+            for part in response.candidates[0].content.parts:
+                if part.inline_data is not None:
+                    with open(output_path, 'wb') as f:
+                        f.write(part.inline_data.data)
+                    logger.info(f"Generated image for scene {scene_num}: {output_path}")
+                    image_saved = True
+                    break
 
-        if response.generated_images and len(response.generated_images) > 0:
-            img_bytes = response.generated_images[0].image.image_bytes
-            with open(output_path, 'wb') as f:
-                f.write(img_bytes)
-            logger.info(f"Generated image for scene {scene_num}: {output_path} ({len(img_bytes)} bytes)")
-            return True
-        else:
-            logger.warning(f"No image generated for scene {scene_num}. Response: {response}. Creating placeholder.")
+        if not image_saved:
+            logger.warning(f"No image in Gemini response for scene {scene_num}, trying Imagen fallback...")
+            # Try Imagen as fallback
+            try:
+                response2 = client.models.generate_images(
+                    model='imagen-3.0-generate-002',
+                    prompt=full_prompt,
+                    config=types.GenerateImagesConfig(
+                        number_of_images=1,
+                        aspect_ratio='16:9',
+                        safety_filter_level='BLOCK_ONLY_HIGH',
+                    )
+                )
+                if response2.generated_images and len(response2.generated_images) > 0:
+                    img_bytes = response2.generated_images[0].image.image_bytes
+                    with open(output_path, 'wb') as f:
+                        f.write(img_bytes)
+                    logger.info(f"Imagen fallback succeeded for scene {scene_num}")
+                    image_saved = True
+            except Exception as e2:
+                logger.warning(f"Imagen fallback also failed: {e2}")
+
+        if not image_saved:
+            logger.warning(f"All image generation failed for scene {scene_num}, using placeholder")
             emit_progress(session_id, 'generation', 0,
-                         f'Imagen returned no image for scene {scene_num} — using placeholder')
+                         f'Image generation failed for scene {scene_num} — using placeholder')
             create_placeholder_image(prompt, output_path)
-            return True
+
+        return True
 
     except Exception as e:
-        logger.error(f"Imagen generation failed for scene {scene_num}: {type(e).__name__}: {e}", exc_info=True)
+        logger.error(f"Image generation failed for scene {scene_num}: {type(e).__name__}: {e}", exc_info=True)
         emit_progress(session_id, 'generation', 0,
-                     f'Imagen error for scene {scene_num}: {str(e)[:100]}')
+                     f'Image error for scene {scene_num}: {str(e)[:100]}')
         create_placeholder_image(prompt, output_path)
         return True
 
