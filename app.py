@@ -38,42 +38,46 @@ GOOGLE_API_KEY = os.environ.get('GOOGLE_API_KEY')
 
 ALLOWED_EXTENSIONS = {'mp3', 'wav', 'ogg', 'flac', 'm4a', 'aac', 'webm', 'mp4'}
 
-# Consistent style prompt for all image generation
-# CRITICAL: Very specific character description ensures DALL-E generates consistent characters
-CHARACTER_DESIGN = (
-    "The characters are drawn in a specific cartoon stick figure style: "
-    "Each character has a LARGE perfectly round white head with a thick black outline. "
-    "The head is oversized compared to the body (about 1/3 of the character's total height). "
-    "Faces have simple but EXPRESSIVE features: thick black eyebrows that show emotion, "
-    "small black dot or oval eyes, a simple line mouth that curves to show emotion. "
-    "NO nose, NO ears. The head has a subtle soft shadow underneath it. "
-    "Bodies are thin with simple black outlines, wearing detailed clothing — "
-    "shirts, pants, jackets, hats, backpacks, accessories with realistic folds and colors. "
-    "Hands are simple white mitten shapes with black outlines. "
-    "Feet wear simple shoes. "
-    "The clothing and accessories are more detailed than the faces — this contrast is key to the style. "
-    "Characters have a slight drop shadow on the ground. "
-    "ALL characters in every scene MUST follow this exact same design. "
-    "Characters are distinguished by their clothing color, hats, and accessories only."
+# =============================================================
+# STYLE SEED — extracted from reference image for consistency
+# This exact description is prepended to EVERY image generation
+# =============================================================
+STYLE_SEED = (
+    "Digital illustration in a very specific cartoon style. "
+    "EXACT CHARACTER STYLE (every character must look like this): "
+    "Characters have oversized perfectly circular white heads, approximately 1/3 of their total body height. "
+    "Heads are filled solid white/cream with a clean thick black outline stroke (about 3px weight). "
+    "Faces are minimal but expressive: thick angular black eyebrows (V-shaped when angry, arched when surprised, "
+    "flat when neutral), small solid black oval eyes spaced apart, simple curved line mouth. "
+    "NO nose, NO ears, NO visible hair unless wearing a hat. "
+    "A subtle warm gray shadow sits directly under the chin where head meets body. "
+    "Bodies are slim with black-outlined clothing — NOT stick-thin lines but slightly fleshed out with visible "
+    "shirt collars, sleeves, belts, pant legs. Clothing has muted natural colors: khaki, olive, brown, dark gray. "
+    "Clothing shows subtle folds and wrinkles with thin darker shade lines. "
+    "Hands are small white mitten/oval shapes with black outlines, sometimes holding props (sticks, bags, tools). "
+    "Feet are small simple dark shoes/boots. "
+    "Characters cast a soft diffused shadow on the ground beneath them. "
+    "Characters stand in natural poses — weight on one leg, arms gesturing, leaning, pointing. "
+    "EXACT BACKGROUND STYLE: "
+    "Lush, richly painted digital backgrounds resembling concept art or animated film backgrounds. "
+    "Backgrounds use a layered composition: dark detailed foreground elements framing the scene (tree trunks, "
+    "bushes, rocks, foliage), a lighter middle ground where characters stand on textured ground (dirt path, "
+    "cobblestone, wooden floor), and a soft glowing background with atmospheric haze and warm light. "
+    "Color palette: deep forest greens, warm golden yellows, rich earth browns, olive greens, amber highlights. "
+    "Lighting: warm golden volumetric light coming from the background, creating a natural spotlight on the characters. "
+    "Foliage is painted with visible brushstrokes — not photorealistic, clearly painted/illustrated. "
+    "Tree bark has painted texture with warm brown and reddish tones. "
+    "Small environmental details: hanging vines, falling leaves, scattered rocks, moss on surfaces. "
+    "Overall mood: warm, atmospheric, like a frame from an animated adventure film. "
+    "The style contrast between the simple cartoon characters and the detailed painted backgrounds is the KEY "
+    "defining feature of this art style. "
+    "16:9 widescreen cinematic composition. Absolutely NO text, words, letters, or watermarks in the image."
 )
 
-STYLE_PROMPT = (
-    f"{CHARACTER_DESIGN} "
-    "The background is a RICH, highly detailed painterly digital illustration. "
-    "Lush environments with depth — foreground elements, middle ground, and background layers. "
-    "Warm earthy color palette: deep greens, rich browns, golden ambers, warm yellows, muted oranges. "
-    "Atmospheric lighting with volumetric light rays, soft glowing highlights, and gentle shadows. "
-    "Textured brushstroke style backgrounds like a concept art painting. "
-    "The detailed painted background contrasts with the simple cartoon characters. "
-    "16:9 widescreen cinematic composition. No text or words in the image."
-)
+STYLE_PROMPT = STYLE_SEED
 
 VIDEO_STYLE_PROMPT = (
-    f"{CHARACTER_DESIGN} "
-    "Animated scene with rich detailed painterly backgrounds. "
-    "Lush environments, warm earthy colors, atmospheric volumetric lighting. "
-    "Smooth animation of the simple cartoon stick figure characters. "
-    "Cinematic composition with depth and layers."
+    f"{STYLE_SEED} Animated with smooth subtle movement."
 )
 
 
@@ -159,22 +163,25 @@ def detect_scene_changes(transcript_data, session_id):
                 "content": (
                     "You are a visual director for an animated story using CONSISTENT stick figure characters. "
                     "Analyze the voiceover transcript and identify distinct scenes/topic changes.\n\n"
-                    "CHARACTER DESIGN (must be described the same way in EVERY scene):\n"
-                    "- Main character: round white head, two dot eyes, thin black line body, simple clothing\n"
-                    "- All other characters follow the same design\n"
-                    "- Characters are distinguished ONLY by: clothing color, hats, accessories, or size\n"
-                    "- Example: 'the main stick figure character (round white head, dot eyes, blue shirt)'\n"
-                    "- NEVER describe characters differently between scenes\n\n"
+                    "CHARACTER DESIGN (IDENTICAL in every scene — never deviate):\n"
+                    "- Every character has an oversized round white head with thick black outline\n"
+                    "- Thick expressive black eyebrows, small black oval eyes, simple line mouth\n"
+                    "- NO nose, NO ears, NO hair (unless wearing a hat)\n"
+                    "- Bodies wear muted natural-colored clothing: khaki, olive, brown, dark gray\n"
+                    "- Small white mitten hands, simple dark shoes\n"
+                    "- Characters are distinguished ONLY by clothing color, hats, and accessories\n"
+                    "- Do NOT describe heads/faces differently between scenes — only describe clothing and actions\n\n"
                     "For each scene provide:\n"
                     "1. The start and end timestamps\n"
-                    "2. A visual description that includes the consistent character description AND the scene action\n"
+                    "2. A visual description focusing on CHARACTER ACTIONS and DETAILED BACKGROUND/SETTING\n"
                     "3. Whether it's in the first 30 seconds (for video animation) or after (for still image)\n\n"
                     "CRITICAL RULES FOR VISUAL DESCRIPTIONS:\n"
-                    "- Always reference 'the stick figure character with a round white head and dot eyes'\n"
-                    "- Describe what the character is DOING and the SETTING/BACKGROUND\n"
-                    "- Keep backgrounds detailed: describe the environment, lighting, colors, mood\n"
+                    "- Do NOT describe the character's head/face style (the image generator already knows this)\n"
+                    "- Instead focus on: what the character WEARS, what they're DOING, and the SETTING\n"
+                    "- Describe rich backgrounds: environment type, lighting direction, color mood, foreground/background elements\n"
+                    "- Example: 'Character in olive jacket points ahead, standing on a misty forest path. Golden light filters through dense canopy. Hanging vines and moss-covered rocks frame the scene.'\n"
                     "- Limit to 1-3 characters per scene for clarity\n"
-                    "- Do NOT include any text, words, labels, or captions in the visual description\n\n"
+                    "- Do NOT include any text, words, labels, or watermarks in the visual description\n\n"
                     "Return valid JSON only, no markdown, with this structure:\n"
                     "{\n"
                     '  "scenes": [\n'
@@ -191,8 +198,12 @@ def detect_scene_changes(transcript_data, session_id):
                     "Important rules:\n"
                     "- Scenes in the first 30 seconds should have is_video: true\n"
                     "- Scenes after 30 seconds should have is_video: false\n"
-                    "- Each scene should be 3-10 seconds long\n"
-                    "- Video scenes (first 30s) can be grouped into 2-4 scenes\n"
+                    "- GENERATE A NEW SCENE FOR EVERY SENTENCE OR DISTINCT BEAT in the narration\n"
+                    "- Each scene should be 2-5 seconds long — SHORT and frequent\n"
+                    "- Aim for at least one scene every 3-5 seconds of audio\n"
+                    "- A 1-minute voiceover should have 12-20 scenes\n"
+                    "- A 3-minute voiceover should have 35-60 scenes\n"
+                    "- Every new idea, action, or sentence deserves its own visual\n"
                     "- Cover the entire duration of the audio, no gaps\n"
                     "- Visual descriptions should tell a visual story matching the narration\n"
                     "- EVERY visual_description must start with the character description for consistency"
@@ -204,7 +215,7 @@ def detect_scene_changes(transcript_data, session_id):
             }
         ],
         temperature=0.7,
-        max_tokens=4000
+        max_tokens=12000
     )
 
     response_text = response.choices[0].message.content.strip()
