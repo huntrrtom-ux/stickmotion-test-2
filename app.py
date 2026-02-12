@@ -94,10 +94,19 @@ def transcribe_audio(filepath, session_id):
     segments = []
     if hasattr(transcript, 'segments') and transcript.segments:
         for seg in transcript.segments:
+            # Handle both object attributes and dict-style access
+            if hasattr(seg, 'start'):
+                start = seg.start
+                end = seg.end
+                text = seg.text
+            else:
+                start = seg['start']
+                end = seg['end']
+                text = seg['text']
             segments.append({
-                'start': seg.get('start', seg.start) if hasattr(seg, 'start') else seg['start'],
-                'end': seg.get('end', seg.end) if hasattr(seg, 'end') else seg['end'],
-                'text': seg.get('text', seg.text) if hasattr(seg, 'text') else seg['text']
+                'start': start,
+                'end': end,
+                'text': text.strip()
             })
 
     full_text = transcript.text if hasattr(transcript, 'text') else str(transcript)
