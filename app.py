@@ -203,7 +203,7 @@ def generate_image_imagen(prompt, output_path, session_id, scene_num):
         logger.info(f"Image generation request for scene {scene_num}")
 
         response = client.models.generate_content(
-            model="gemini-2.0-flash-exp",
+            model="gemini-2.5-flash-image",
             contents=full_prompt,
             config=types.GenerateContentConfig(
                 response_modalities=['Image', 'Text']
