@@ -193,68 +193,40 @@ def detect_scene_changes(transcript_data, session_id):
     return scenes['scenes']
 
 
-def generate_image_imagen(prompt, output_path, session_id, scene_num):
-    """Generate a still image using Gemini's native image generation."""
+def generate_image_dalle(prompt, output_path, session_id, scene_num):
+    """Generate a still image using OpenAI DALL-E 3."""
     try:
-        client = genai.Client(api_key=GOOGLE_API_KEY)
+        client = openai.OpenAI(api_key=OPENAI_API_KEY)
 
         full_prompt = f"{STYLE_PROMPT} Scene: {prompt}"
         
-        logger.info(f"Image generation request for scene {scene_num}")
+        logger.info(f"DALL-E 3 image generation request for scene {scene_num}")
 
-        response = client.models.generate_content(
-            model="gemini-2.5-flash-image",
-            contents=full_prompt,
-            config=types.GenerateContentConfig(
-                response_modalities=['Image', 'Text']
-            )
+        response = client.images.generate(
+            model="dall-e-3",
+            prompt=full_prompt,
+            size="1792x1024",
+            quality="standard",
+            n=1,
         )
 
-        # Extract image from response parts
-        image_saved = False
-        if response.candidates and response.candidates[0].content and response.candidates[0].content.parts:
-            for part in response.candidates[0].content.parts:
-                if part.inline_data is not None:
-                    with open(output_path, 'wb') as f:
-                        f.write(part.inline_data.data)
-                    logger.info(f"Generated image for scene {scene_num}: {output_path}")
-                    image_saved = True
-                    break
-
-        if not image_saved:
-            logger.warning(f"No image in Gemini response for scene {scene_num}, trying Imagen fallback...")
-            # Try Imagen as fallback
-            try:
-                response2 = client.models.generate_images(
-                    model='imagen-3.0-generate-002',
-                    prompt=full_prompt,
-                    config=types.GenerateImagesConfig(
-                        number_of_images=1,
-                        aspect_ratio='16:9',
-                        safety_filter_level='BLOCK_ONLY_HIGH',
-                    )
-                )
-                if response2.generated_images and len(response2.generated_images) > 0:
-                    img_bytes = response2.generated_images[0].image.image_bytes
-                    with open(output_path, 'wb') as f:
-                        f.write(img_bytes)
-                    logger.info(f"Imagen fallback succeeded for scene {scene_num}")
-                    image_saved = True
-            except Exception as e2:
-                logger.warning(f"Imagen fallback also failed: {e2}")
-
-        if not image_saved:
-            logger.warning(f"All image generation failed for scene {scene_num}, using placeholder")
-            emit_progress(session_id, 'generation', 0,
-                         f'Image generation failed for scene {scene_num} — using placeholder')
-            create_placeholder_image(prompt, output_path)
-
+        image_url = response.data[0].url
+        
+        # Download the image
+        import requests as req
+        img_response = req.get(image_url, timeout=60)
+        img_response.raise_for_status()
+        
+        with open(output_path, 'wb') as f:
+            f.write(img_response.content)
+        
+        logger.info(f"Generated DALL-E 3 image for scene {scene_num}: {output_path} ({len(img_response.content)} bytes)")
         return True
 
     except Exception as e:
-        logger.error(f"Image generation failed for scene {scene_num}: {type(e).__name__}: {e}", exc_info=True)
+        logger.error(f"DALL-E 3 generation failed for scene {scene_num}: {type(e).__name__}: {e}", exc_info=True)
         emit_progress(session_id, 'generation', 0,
-                     f'Image error for scene {scene_num}: {str(e)[:100]}')
+                     f'DALL-E error for scene {scene_num}: {str(e)[:100]}')
         create_placeholder_image(prompt, output_path)
         return True
 
@@ -513,44 +485,20 @@ def process_voiceover(filepath, session_id):
             start = scene['start_time']
             end = scene['end_time']
             duration = end - start
-            is_video = scene.get('is_video', start < 30)
             visual_desc = scene['visual_description']
 
             progress_base = 20 + (60 * i / total_scenes)
             emit_progress(session_id, 'generation', int(progress_base),
                          f'Generating visual for scene {scene_num}/{total_scenes}...')
 
-            if is_video:
-                # Generate animated video with Veo for first 30 seconds
-                video_path = os.path.join(work_dir, f'scene_{scene_num:03d}.mp4')
-                generate_video_veo(visual_desc, video_path, duration, session_id, scene_num)
+            # Generate still image with DALL-E 3 for all scenes
+            img_path = os.path.join(work_dir, f'scene_{scene_num:03d}.png')
+            generate_image_dalle(visual_desc, img_path, session_id, scene_num)
 
-                # Trim to exact duration needed
-                trimmed_path = os.path.join(work_dir, f'scene_{scene_num:03d}_trimmed.mp4')
-                cmd = [
-                    'ffmpeg', '-y',
-                    '-i', video_path,
-                    '-t', str(duration),
-                    '-c:v', 'libx264',
-                    '-pix_fmt', 'yuv420p',
-                    '-r', '25',
-                    '-vf', 'scale=1920:1080',
-                    trimmed_path
-                ]
-                try:
-                    subprocess.run(cmd, check=True, capture_output=True, timeout=120)
-                    scene_videos.append(trimmed_path)
-                except Exception:
-                    scene_videos.append(video_path)
-            else:
-                # Generate still image with Imagen
-                img_path = os.path.join(work_dir, f'scene_{scene_num:03d}.png')
-                generate_image_imagen(visual_desc, img_path, session_id, scene_num)
-
-                # Convert to video segment with Ken Burns effect
-                video_path = os.path.join(work_dir, f'scene_{scene_num:03d}_video.mp4')
-                create_video_from_image(img_path, video_path, duration)
-                scene_videos.append(video_path)
+            # Convert to video segment with Ken Burns effect
+            video_path = os.path.join(work_dir, f'scene_{scene_num:03d}_video.mp4')
+            create_video_from_image(img_path, video_path, duration)
+            scene_videos.append(video_path)
 
             emit_progress(session_id, 'generation', int(progress_base + (60 / total_scenes)),
                          f'Scene {scene_num}/{total_scenes} complete')
