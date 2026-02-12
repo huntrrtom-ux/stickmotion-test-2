@@ -39,45 +39,25 @@ GOOGLE_API_KEY = os.environ.get('GOOGLE_API_KEY')
 ALLOWED_EXTENSIONS = {'mp3', 'wav', 'ogg', 'flac', 'm4a', 'aac', 'webm', 'mp4'}
 
 # =============================================================
-# STYLE SEED — extracted from reference image for consistency
-# This exact description is prepended to EVERY image generation
+# STYLE SEED — condensed for consistency without overwhelming the scene
 # =============================================================
-STYLE_SEED = (
-    "Digital illustration in a very specific cartoon style. "
-    "EXACT CHARACTER STYLE (every character must look like this): "
-    "Characters have oversized perfectly circular white heads, approximately 1/3 of their total body height. "
-    "Heads are filled solid white/cream with a clean thick black outline stroke (about 3px weight). "
-    "Faces are minimal but expressive: thick angular black eyebrows (V-shaped when angry, arched when surprised, "
-    "flat when neutral), small solid black oval eyes spaced apart, simple curved line mouth. "
-    "NO nose, NO ears, NO visible hair unless wearing a hat. "
-    "A subtle warm gray shadow sits directly under the chin where head meets body. "
-    "Bodies are slim with black-outlined clothing — NOT stick-thin lines but slightly fleshed out with visible "
-    "shirt collars, sleeves, belts, pant legs. Clothing has muted natural colors: khaki, olive, brown, dark gray. "
-    "Clothing shows subtle folds and wrinkles with thin darker shade lines. "
-    "Hands are small white mitten/oval shapes with black outlines, sometimes holding props (sticks, bags, tools). "
-    "Feet are small simple dark shoes/boots. "
-    "Characters cast a soft diffused shadow on the ground beneath them. "
-    "Characters stand in natural poses — weight on one leg, arms gesturing, leaning, pointing. "
-    "EXACT BACKGROUND STYLE: "
-    "Lush, richly painted digital backgrounds resembling concept art or animated film backgrounds. "
-    "Backgrounds use a layered composition: dark detailed foreground elements framing the scene (tree trunks, "
-    "bushes, rocks, foliage), a lighter middle ground where characters stand on textured ground (dirt path, "
-    "cobblestone, wooden floor), and a soft glowing background with atmospheric haze and warm light. "
-    "Color palette: deep forest greens, warm golden yellows, rich earth browns, olive greens, amber highlights. "
-    "Lighting: warm golden volumetric light coming from the background, creating a natural spotlight on the characters. "
-    "Foliage is painted with visible brushstrokes — not photorealistic, clearly painted/illustrated. "
-    "Tree bark has painted texture with warm brown and reddish tones. "
-    "Small environmental details: hanging vines, falling leaves, scattered rocks, moss on surfaces. "
-    "Overall mood: warm, atmospheric, like a frame from an animated adventure film. "
-    "The style contrast between the simple cartoon characters and the detailed painted backgrounds is the KEY "
-    "defining feature of this art style. "
-    "16:9 widescreen cinematic composition. Absolutely NO text, words, letters, or watermarks in the image."
+STYLE_SHORT = (
+    "Art style: cartoon stick figures with oversized round white heads (thick black outline), "
+    "expressive black eyebrows, small dot eyes, line mouth, no nose/ears. "
+    "Bodies wear muted clothing (khaki, olive, brown) with visible folds. "
+    "White mitten hands, dark shoes. Subtle chin shadow and ground shadow. "
+    "Backgrounds: richly painted, layered, warm earthy tones, atmospheric golden lighting, "
+    "like an animated adventure film. Painterly textured environments. "
+    "16:9 cinematic. No text/words/watermarks in image."
 )
 
-STYLE_PROMPT = STYLE_SEED
+# Full style seed kept for reference/Veo
+STYLE_SEED = STYLE_SHORT
+
+STYLE_PROMPT = STYLE_SHORT
 
 VIDEO_STYLE_PROMPT = (
-    f"{STYLE_SEED} Animated with smooth subtle movement."
+    f"{STYLE_SHORT} Animated with smooth subtle movement."
 )
 
 
@@ -238,7 +218,11 @@ def generate_image_dalle(prompt, output_path, session_id, scene_num):
     try:
         client = openai.OpenAI(api_key=OPENAI_API_KEY)
 
-        full_prompt = f"{STYLE_PROMPT} Scene: {prompt}"
+        # SCENE ACTION FIRST, style second — so DALL-E prioritizes the narrative
+        full_prompt = (
+            f"SCENE: {prompt}\n\n"
+            f"STYLE: {STYLE_PROMPT}"
+        )
         
         logger.info(f"DALL-E 3 image generation request for scene {scene_num}")
 
