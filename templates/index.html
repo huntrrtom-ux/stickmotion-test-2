@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stickmotion — Voiceover Visualizer</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@400;600;700&family=DM+Sans:ital,wght@0,400;0,500;0,700;1,400&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="grain-overlay"></div>
+
+    <!-- Header -->
+    <header class="header">
+        <div class="logo">
+            <svg class="logo-icon" viewBox="0 0 48 48" fill="none">
+                <circle cx="24" cy="10" r="6" stroke="currentColor" stroke-width="2.5"/>
+                <line x1="24" y1="16" x2="24" y2="32" stroke="currentColor" stroke-width="2.5"/>
+                <line x1="14" y1="22" x2="34" y2="22" stroke="currentColor" stroke-width="2.5"/>
+                <line x1="24" y1="32" x2="16" y2="44" stroke="currentColor" stroke-width="2.5"/>
+                <line x1="24" y1="32" x2="32" y2="44" stroke="currentColor" stroke-width="2.5"/>
+            </svg>
+            <span class="logo-text">Stickmotion</span>
+        </div>
+        <p class="tagline">Upload a voiceover. Get a visual story.</p>
+    </header>
+
+    <!-- Main Content -->
+    <main class="main">
+        <!-- Upload Section -->
+        <section id="upload-section" class="section upload-section">
+            <div class="upload-card">
+                <div class="upload-zone" id="drop-zone">
+                    <div class="upload-illustration">
+                        <svg viewBox="0 0 120 120" fill="none" class="upload-svg">
+                            <circle cx="60" cy="60" r="55" stroke="#E8DDD3" stroke-width="2" stroke-dasharray="8 6"/>
+                            <path d="M60 35 L60 75" stroke="#B8977E" stroke-width="3" stroke-linecap="round"/>
+                            <path d="M45 50 L60 35 L75 50" stroke="#B8977E" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+                            <path d="M35 85 L85 85" stroke="#E8DDD3" stroke-width="3" stroke-linecap="round"/>
+                        </svg>
+                    </div>
+                    <h2 class="upload-title">Drop your voiceover here</h2>
+                    <p class="upload-subtitle">MP3, WAV, OGG, FLAC, M4A, AAC — up to 500MB</p>
+                    <button class="upload-btn" id="browse-btn">
+                        <span>Browse Files</span>
+                    </button>
+                    <input type="file" id="file-input" accept=".mp3,.wav,.ogg,.flac,.m4a,.aac,.webm,.mp4" hidden>
+                </div>
+
+                <!-- File Selected State -->
+                <div class="file-selected hidden" id="file-selected">
+                    <div class="file-info">
+                        <svg class="file-icon" viewBox="0 0 24 24" fill="none">
+                            <path d="M9 18V5l12-2v13" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                            <circle cx="6" cy="18" r="3" stroke="currentColor" stroke-width="2"/>
+                            <circle cx="18" cy="16" r="3" stroke="currentColor" stroke-width="2"/>
+                        </svg>
+                        <div>
+                            <p class="file-name" id="file-name"></p>
+                            <p class="file-size" id="file-size"></p>
+                        </div>
+                    </div>
+                    <button class="generate-btn" id="generate-btn">
+                        <span class="btn-text">Generate Visuals</span>
+                        <svg class="btn-arrow" viewBox="0 0 24 24" fill="none">
+                            <path d="M5 12h14M12 5l7 7-7 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Processing Section -->
+        <section id="processing-section" class="section processing-section hidden">
+            <div class="processing-card">
+                <div class="processing-header">
+                    <h2>Bringing your story to life</h2>
+                    <p class="processing-subtitle" id="status-message">Initializing...</p>
+                </div>
+
+                <!-- Progress Steps -->
+                <div class="progress-steps">
+                    <div class="step" id="step-transcription" data-step="transcription">
+                        <div class="step-indicator">
+                            <div class="step-dot"></div>
+                            <div class="step-line"></div>
+                        </div>
+                        <div class="step-content">
+                            <h3>Transcription</h3>
+                            <p>Analyzing your voiceover with Whisper</p>
+                        </div>
+                    </div>
+                    <div class="step" id="step-scene_detection" data-step="scene_detection">
+                        <div class="step-indicator">
+                            <div class="step-dot"></div>
+                            <div class="step-line"></div>
+                        </div>
+                        <div class="step-content">
+                            <h3>Scene Detection</h3>
+                            <p>Identifying story beats & visual cues</p>
+                        </div>
+                    </div>
+                    <div class="step" id="step-generation" data-step="generation">
+                        <div class="step-indicator">
+                            <div class="step-dot"></div>
+                            <div class="step-line"></div>
+                        </div>
+                        <div class="step-content">
+                            <h3>Visual Generation</h3>
+                            <p>Creating stick figure illustrations & animations</p>
+                        </div>
+                    </div>
+                    <div class="step" id="step-compositing" data-step="compositing">
+                        <div class="step-indicator">
+                            <div class="step-dot"></div>
+                            <div class="step-line"></div>
+                        </div>
+                        <div class="step-content">
+                            <h3>Compositing</h3>
+                            <p>Assembling the final video</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Progress Bar -->
+                <div class="progress-bar-container">
+                    <div class="progress-bar" id="progress-bar"></div>
+                    <span class="progress-text" id="progress-text">0%</span>
+                </div>
+
+                <!-- Animated Stick Figure -->
+                <div class="processing-animation">
+                    <svg viewBox="0 0 200 100" class="walking-stick">
+                        <g class="walker">
+                            <circle cx="100" cy="20" r="8" fill="none" stroke="#B8977E" stroke-width="2"/>
+                            <line x1="100" y1="28" x2="100" y2="55" stroke="#B8977E" stroke-width="2"/>
+                            <line class="left-arm" x1="100" y1="38" x2="85" y2="48" stroke="#B8977E" stroke-width="2"/>
+                            <line class="right-arm" x1="100" y1="38" x2="115" y2="48" stroke="#B8977E" stroke-width="2"/>
+                            <line class="left-leg" x1="100" y1="55" x2="88" y2="75" stroke="#B8977E" stroke-width="2"/>
+                            <line class="right-leg" x1="100" y1="55" x2="112" y2="75" stroke="#B8977E" stroke-width="2"/>
+                        </g>
+                        <line x1="0" y1="80" x2="200" y2="80" stroke="#E8DDD3" stroke-width="1.5"/>
+                    </svg>
+                </div>
+            </div>
+        </section>
+
+        <!-- Result Section -->
+        <section id="result-section" class="section result-section hidden">
+            <div class="result-card">
+                <div class="result-header">
+                    <div class="success-badge">
+                        <svg viewBox="0 0 24 24" fill="none">
+                            <path d="M20 6L9 17l-5-5" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                    </div>
+                    <h2>Your visual story is ready</h2>
+                </div>
+
+                <!-- Scene Timeline -->
+                <div class="scene-timeline" id="scene-timeline"></div>
+
+                <!-- Download -->
+                <div class="download-section">
+                    <a class="download-btn" id="download-btn" href="#" download>
+                        <svg viewBox="0 0 24 24" fill="none">
+                            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                        <span>Download MP4</span>
+                    </a>
+                    <button class="new-btn" id="new-btn">
+                        <span>Create Another</span>
+                    </button>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <p>Powered by Whisper · GPT-4o · Imagen · Veo</p>
+    </footer>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.4/socket.io.min.js"></script>
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
