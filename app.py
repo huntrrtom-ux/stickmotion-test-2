@@ -39,23 +39,41 @@ GOOGLE_API_KEY = os.environ.get('GOOGLE_API_KEY')
 ALLOWED_EXTENSIONS = {'mp3', 'wav', 'ogg', 'flac', 'm4a', 'aac', 'webm', 'mp4'}
 
 # Consistent style prompt for all image generation
+# CRITICAL: Very specific character description ensures DALL-E generates consistent characters
+CHARACTER_DESIGN = (
+    "The characters are drawn in a specific cartoon stick figure style: "
+    "Each character has a LARGE perfectly round white head with a thick black outline. "
+    "The head is oversized compared to the body (about 1/3 of the character's total height). "
+    "Faces have simple but EXPRESSIVE features: thick black eyebrows that show emotion, "
+    "small black dot or oval eyes, a simple line mouth that curves to show emotion. "
+    "NO nose, NO ears. The head has a subtle soft shadow underneath it. "
+    "Bodies are thin with simple black outlines, wearing detailed clothing — "
+    "shirts, pants, jackets, hats, backpacks, accessories with realistic folds and colors. "
+    "Hands are simple white mitten shapes with black outlines. "
+    "Feet wear simple shoes. "
+    "The clothing and accessories are more detailed than the faces — this contrast is key to the style. "
+    "Characters have a slight drop shadow on the ground. "
+    "ALL characters in every scene MUST follow this exact same design. "
+    "Characters are distinguished by their clothing color, hats, and accessories only."
+)
+
 STYLE_PROMPT = (
-    "Digital cartoon illustration with stick figure characters. "
-    "Characters have large round white heads with simple dot eyes and expressive faces, "
-    "thin black line bodies with simple hands and feet, wearing simple clothing. "
-    "Rich detailed painted backgrounds with depth, texture, and atmospheric lighting. "
-    "Style similar to web comics and animated explainer videos. "
-    "Warm earthy color palette with greens, browns, and muted tones. "
-    "High quality digital art, painterly textured background, cartoon style."
+    f"{CHARACTER_DESIGN} "
+    "The background is a RICH, highly detailed painterly digital illustration. "
+    "Lush environments with depth — foreground elements, middle ground, and background layers. "
+    "Warm earthy color palette: deep greens, rich browns, golden ambers, warm yellows, muted oranges. "
+    "Atmospheric lighting with volumetric light rays, soft glowing highlights, and gentle shadows. "
+    "Textured brushstroke style backgrounds like a concept art painting. "
+    "The detailed painted background contrasts with the simple cartoon characters. "
+    "16:9 widescreen cinematic composition. No text or words in the image."
 )
 
 VIDEO_STYLE_PROMPT = (
-    "Animated cartoon stick figure animation with expressive characters. "
-    "Characters have large round white heads with simple facial expressions, "
-    "thin black line bodies wearing simple clothes. "
-    "Rich detailed painted backgrounds with depth and atmospheric lighting. "
-    "Smooth animation, warm earthy color palette, web comic art style. "
-    "High quality digital animation with painterly textured backgrounds."
+    f"{CHARACTER_DESIGN} "
+    "Animated scene with rich detailed painterly backgrounds. "
+    "Lush environments, warm earthy colors, atmospheric volumetric lighting. "
+    "Smooth animation of the simple cartoon stick figure characters. "
+    "Cinematic composition with depth and layers."
 )
 
 
@@ -139,14 +157,24 @@ def detect_scene_changes(transcript_data, session_id):
             {
                 "role": "system",
                 "content": (
-                    "You are a visual director for an animated story. Analyze the voiceover transcript "
-                    "and identify distinct scenes/topic changes. For each scene, provide:\n"
+                    "You are a visual director for an animated story using CONSISTENT stick figure characters. "
+                    "Analyze the voiceover transcript and identify distinct scenes/topic changes.\n\n"
+                    "CHARACTER DESIGN (must be described the same way in EVERY scene):\n"
+                    "- Main character: round white head, two dot eyes, thin black line body, simple clothing\n"
+                    "- All other characters follow the same design\n"
+                    "- Characters are distinguished ONLY by: clothing color, hats, accessories, or size\n"
+                    "- Example: 'the main stick figure character (round white head, dot eyes, blue shirt)'\n"
+                    "- NEVER describe characters differently between scenes\n\n"
+                    "For each scene provide:\n"
                     "1. The start and end timestamps\n"
-                    "2. A visual description for a stick figure paint-style illustration\n"
+                    "2. A visual description that includes the consistent character description AND the scene action\n"
                     "3. Whether it's in the first 30 seconds (for video animation) or after (for still image)\n\n"
-                    "The visual descriptions should be specific, depicting stick figures in action "
-                    "that match what's being narrated. Keep descriptions consistent with a charming "
-                    "hand-drawn paint/watercolor style.\n\n"
+                    "CRITICAL RULES FOR VISUAL DESCRIPTIONS:\n"
+                    "- Always reference 'the stick figure character with a round white head and dot eyes'\n"
+                    "- Describe what the character is DOING and the SETTING/BACKGROUND\n"
+                    "- Keep backgrounds detailed: describe the environment, lighting, colors, mood\n"
+                    "- Limit to 1-3 characters per scene for clarity\n"
+                    "- Do NOT include any text, words, labels, or captions in the visual description\n\n"
                     "Return valid JSON only, no markdown, with this structure:\n"
                     "{\n"
                     '  "scenes": [\n'
@@ -155,7 +183,7 @@ def detect_scene_changes(transcript_data, session_id):
                     '      "start_time": 0.0,\n'
                     '      "end_time": 8.5,\n'
                     '      "narration_summary": "brief summary of what is being said",\n'
-                    '      "visual_description": "specific description of stick figure scene to illustrate",\n'
+                    '      "visual_description": "A stick figure with a round white head and dot eyes, wearing a blue shirt, stands in [detailed scene description]",\n'
                     '      "is_video": true\n'
                     "    }\n"
                     "  ]\n"
@@ -166,7 +194,8 @@ def detect_scene_changes(transcript_data, session_id):
                     "- Each scene should be 3-10 seconds long\n"
                     "- Video scenes (first 30s) can be grouped into 2-4 scenes\n"
                     "- Cover the entire duration of the audio, no gaps\n"
-                    "- Visual descriptions should tell a visual story matching the narration"
+                    "- Visual descriptions should tell a visual story matching the narration\n"
+                    "- EVERY visual_description must start with the character description for consistency"
                 )
             },
             {
