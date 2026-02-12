@@ -40,19 +40,22 @@ ALLOWED_EXTENSIONS = {'mp3', 'wav', 'ogg', 'flac', 'm4a', 'aac', 'webm', 'mp4'}
 
 # Consistent style prompt for all image generation
 STYLE_PROMPT = (
-    "Hand-drawn paint style illustration with stick figures. "
-    "Simple, charming, childlike paint strokes on a white/cream background. "
-    "Consistent stick figure characters with round heads and simple line bodies. "
-    "Warm watercolor paint aesthetic, like a children's storybook illustration. "
-    "No photorealistic elements, purely illustrated paint style."
+    "Digital cartoon illustration with stick figure characters. "
+    "Characters have large round white heads with simple dot eyes and expressive faces, "
+    "thin black line bodies with simple hands and feet, wearing simple clothing. "
+    "Rich detailed painted backgrounds with depth, texture, and atmospheric lighting. "
+    "Style similar to web comics and animated explainer videos. "
+    "Warm earthy color palette with greens, browns, and muted tones. "
+    "High quality digital art, painterly textured background, cartoon style."
 )
 
 VIDEO_STYLE_PROMPT = (
-    "Animated hand-drawn paint style stick figure animation. "
-    "Simple stick figures with round heads and line bodies, "
-    "moving with charming hand-drawn animation style. "
-    "Warm watercolor paint aesthetic on white/cream background. "
-    "Smooth animation like a children's storybook come to life."
+    "Animated cartoon stick figure animation with expressive characters. "
+    "Characters have large round white heads with simple facial expressions, "
+    "thin black line bodies wearing simple clothes. "
+    "Rich detailed painted backgrounds with depth and atmospheric lighting. "
+    "Smooth animation, warm earthy color palette, web comic art style. "
+    "High quality digital animation with painterly textured backgrounds."
 )
 
 
@@ -196,6 +199,8 @@ def generate_image_imagen(prompt, output_path, session_id, scene_num):
         client = genai.Client(api_key=GOOGLE_API_KEY)
 
         full_prompt = f"{STYLE_PROMPT} Scene: {prompt}"
+        
+        logger.info(f"Imagen request for scene {scene_num}: {full_prompt[:100]}...")
 
         response = client.models.generate_images(
             model='imagen-3.0-generate-002',
@@ -207,19 +212,25 @@ def generate_image_imagen(prompt, output_path, session_id, scene_num):
             )
         )
 
+        logger.info(f"Imagen response for scene {scene_num}: {response}")
+
         if response.generated_images and len(response.generated_images) > 0:
             img_bytes = response.generated_images[0].image.image_bytes
             with open(output_path, 'wb') as f:
                 f.write(img_bytes)
-            logger.info(f"Generated image for scene {scene_num}: {output_path}")
+            logger.info(f"Generated image for scene {scene_num}: {output_path} ({len(img_bytes)} bytes)")
             return True
         else:
-            logger.warning(f"No image generated for scene {scene_num}, creating placeholder")
+            logger.warning(f"No image generated for scene {scene_num}. Response: {response}. Creating placeholder.")
+            emit_progress(session_id, 'generation', 0,
+                         f'Imagen returned no image for scene {scene_num} — using placeholder')
             create_placeholder_image(prompt, output_path)
             return True
 
     except Exception as e:
-        logger.error(f"Imagen generation failed for scene {scene_num}: {e}")
+        logger.error(f"Imagen generation failed for scene {scene_num}: {type(e).__name__}: {e}", exc_info=True)
+        emit_progress(session_id, 'generation', 0,
+                     f'Imagen error for scene {scene_num}: {str(e)[:100]}')
         create_placeholder_image(prompt, output_path)
         return True
 
@@ -333,35 +344,54 @@ def create_placeholder_image(prompt, output_path):
 
 
 def create_video_from_image(image_path, video_path, duration):
-    """Convert a still image to a video with Ken Burns effect using ffmpeg."""
+    """Convert a still image to a video using ffmpeg with low memory usage."""
     try:
-        # Subtle zoom effect for visual interest
+        # First resize the image to 1280x720 to reduce memory
+        resized_path = image_path.replace('.png', '_resized.png')
+        resize_cmd = [
+            'ffmpeg', '-y',
+            '-i', image_path,
+            '-vf', 'scale=1280:720',
+            resized_path
+        ]
+        subprocess.run(resize_cmd, check=True, capture_output=True, timeout=60)
+        
+        # Simple static image to video — minimal memory usage
         cmd = [
             'ffmpeg', '-y',
             '-loop', '1',
-            '-i', image_path,
+            '-i', resized_path,
             '-c:v', 'libx264',
+            '-preset', 'ultrafast',
+            '-tune', 'stillimage',
             '-t', str(duration),
             '-pix_fmt', 'yuv420p',
-            '-vf', f'scale=1920:1080,zoompan=z=\'min(zoom+0.0005,1.15)\':x=\'iw/2-(iw/zoom/2)\':y=\'ih/2-(ih/zoom/2)\':d={int(duration*25)}:s=1920x1080:fps=25',
-            '-r', '25',
+            '-vf', 'scale=1280:720',
+            '-r', '15',
+            '-threads', '1',
             video_path
         ]
-        subprocess.run(cmd, check=True, capture_output=True, timeout=120)
+        subprocess.run(cmd, check=True, capture_output=True, timeout=180)
+        
+        # Clean up resized image
+        if os.path.exists(resized_path):
+            os.remove(resized_path)
     except Exception as e:
-        logger.error(f"Ken Burns effect failed: {e}, using simple loop")
+        logger.error(f"Video from image failed: {e}, trying minimal approach")
         cmd = [
             'ffmpeg', '-y',
             '-loop', '1',
             '-i', image_path,
             '-c:v', 'libx264',
+            '-preset', 'ultrafast',
             '-t', str(duration),
             '-pix_fmt', 'yuv420p',
-            '-vf', 'scale=1920:1080',
-            '-r', '25',
+            '-vf', 'scale=640:360',
+            '-r', '10',
+            '-threads', '1',
             video_path
         ]
-        subprocess.run(cmd, check=True, capture_output=True, timeout=120)
+        subprocess.run(cmd, check=True, capture_output=True, timeout=180)
 
 
 def get_audio_duration(filepath):
