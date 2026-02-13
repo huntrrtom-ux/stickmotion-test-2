@@ -652,10 +652,10 @@ def process_voiceover(filepath, session_id):
             start = scene['start_time']
             end = scene['end_time']
             duration = end - start
-            is_video = (start < 30)  # Animate scenes in first 30 seconds
+            is_video = (i < 10)  # First 10 scenes get animated
             visual_desc = scene['visual_description']
 
-            logger.info(f"Scene {scene_num}: start={start}, is_video={is_video}")
+            logger.info(f"Scene {scene_num}: start={start}, i={i}, is_video={is_video}")
 
             progress_base = 20 + (60 * i / total_scenes)
             emit_progress(session_id, 'generation', int(progress_base),
