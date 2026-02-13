@@ -404,7 +404,7 @@ def animate_image_whisk(image_info, script, output_path, session_id, scene_num):
     logger.info(f"Whisk Animate operation: {operation_name}")
     
     # Step 2: Poll for completion using the correct status check endpoint
-    max_polls = 40  # ~80 seconds max
+    max_polls = 90  # ~180 seconds (3 min) max — video gen takes time
     
     for i in range(max_polls):
         time.sleep(2)
@@ -644,6 +644,8 @@ def process_voiceover(filepath, session_id):
         # Step 4: Generate visuals for each scene
         scene_videos = []
         total_scenes = len(scenes)
+        animated_count = 0
+        MAX_ANIMATED_SCENES = 5  # Limit video scenes to avoid Railway timeout
 
         for i, scene in enumerate(scenes):
             scene_num = scene.get('scene_number', i + 1)
@@ -653,6 +655,8 @@ def process_voiceover(filepath, session_id):
             is_video = scene.get('is_video', start < 30)
             visual_desc = scene['visual_description']
 
+            logger.info(f"Scene {scene_num}: start={start}, is_video={is_video}, has_image_info=pending")
+
             progress_base = 20 + (60 * i / total_scenes)
             emit_progress(session_id, 'generation', int(progress_base),
                          f'Generating visual for scene {scene_num}/{total_scenes}...')
@@ -660,13 +664,23 @@ def process_voiceover(filepath, session_id):
             # Step 1: Always generate a Whisk image first
             img_path = os.path.join(work_dir, f'scene_{scene_num:03d}.png')
             image_info = generate_image_whisk(visual_desc, img_path, session_id, scene_num)
+            
+            logger.info(f"Scene {scene_num}: is_video={is_video}, image_info_type={type(image_info).__name__}, animated_count={animated_count}/{MAX_ANIMATED_SCENES}")
 
-            if is_video and image_info:
+            if is_video and image_info and animated_count < MAX_ANIMATED_SCENES:
                 # Step 2: Animate the image using Whisk Animate (Veo)
+                logger.info(f"Scene {scene_num} is_video=True, attempting animation ({animated_count+1}/{MAX_ANIMATED_SCENES})...")
                 video_path = os.path.join(work_dir, f'scene_{scene_num:03d}_animated.mp4')
-                animated = animate_image_whisk(
-                    image_info, visual_desc, video_path, session_id, scene_num
-                )
+                try:
+                    animated = animate_image_whisk(
+                        image_info, visual_desc, video_path, session_id, scene_num
+                    )
+                except Exception as e:
+                    logger.error(f"Animation exception for scene {scene_num}: {e}", exc_info=True)
+                    animated = False
+                
+                if animated:
+                    animated_count += 1
                 
                 if animated:
                     # Trim to exact duration
