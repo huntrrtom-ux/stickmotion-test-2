@@ -645,17 +645,17 @@ def process_voiceover(filepath, session_id):
         scene_videos = []
         total_scenes = len(scenes)
         animated_count = 0
-        MAX_ANIMATED_SCENES = 5  # Limit video scenes to avoid Railway timeout
+        MAX_ANIMATED_SCENES = 10  # Limit for testing
 
         for i, scene in enumerate(scenes):
             scene_num = scene.get('scene_number', i + 1)
             start = scene['start_time']
             end = scene['end_time']
             duration = end - start
-            is_video = scene.get('is_video', start < 30)
+            is_video = (start < 30)  # Animate scenes in first 30 seconds
             visual_desc = scene['visual_description']
 
-            logger.info(f"Scene {scene_num}: start={start}, is_video={is_video}, has_image_info=pending")
+            logger.info(f"Scene {scene_num}: start={start}, is_video={is_video}")
 
             progress_base = 20 + (60 * i / total_scenes)
             emit_progress(session_id, 'generation', int(progress_base),
