@@ -213,44 +213,90 @@ def detect_scene_changes(transcript_data, session_id):
     return scenes['scenes']
 
 
+def get_whisk_token(session_id):
+    """Get a bearer token from the Whisk cookie. Caches token for reuse."""
+    import requests as req
+    
+    # Check if we have a cached token that's still valid
+    if hasattr(get_whisk_token, '_token') and hasattr(get_whisk_token, '_expiry'):
+        if time.time() < get_whisk_token._expiry:
+            return get_whisk_token._token
+    
+    WHISK_COOKIE = os.environ.get('WHISK_COOKIE', '')
+    WHISK_API_KEY = os.environ.get('WHISK_API_KEY', '')
+    
+    # If WHISK_API_KEY is set directly (bearer token), use it
+    if WHISK_API_KEY and not WHISK_COOKIE:
+        get_whisk_token._token = WHISK_API_KEY
+        get_whisk_token._expiry = time.time() + 3600  # assume 1 hour
+        return WHISK_API_KEY
+    
+    # Otherwise, exchange cookie for token
+    if WHISK_COOKIE:
+        try:
+            resp = req.get(
+                "https://labs.google/fx/api/auth/session",
+                headers={"cookie": WHISK_COOKIE},
+                timeout=30
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                if "access_token" in data:
+                    get_whisk_token._token = data["access_token"]
+                    # Parse expiry or default to 1 hour
+                    get_whisk_token._expiry = time.time() + 3500
+                    logger.info("Whisk token refreshed successfully")
+                    return data["access_token"]
+                else:
+                    logger.error(f"No access_token in session response: {data}")
+            else:
+                logger.error(f"Session refresh failed: {resp.status_code}")
+        except Exception as e:
+            logger.error(f"Token refresh error: {e}")
+    
+    # Fallback to WHISK_API_KEY
+    return WHISK_API_KEY
+
+
 def generate_image_whisk(prompt, output_path, session_id, scene_num):
     """Generate a still image using Google Whisk (unofficial API). Whisk only — no fallback."""
     import requests as req
     
-    WHISK_API_KEY = os.environ.get('WHISK_API_KEY', '')
-    
-    session_id_whisk = str(uuid.uuid4())
+    token = get_whisk_token(session_id)
     
     full_prompt = f"{STYLE_PROMPT}\n\nSCENE: {prompt}"
     
+    workflow_id = str(uuid.uuid4())
+    session_ts = f";{int(time.time() * 1000)}"
+    
+    # Exact payload from browser Network tab
     json_data = {
-        "userInput": {
-            "candidatesCount": 1,
-            "prompts": [full_prompt],
-            "seed": 0
-        },
         "clientContext": {
-            "sessionId": session_id_whisk,
-            "tool": "WHISK"
+            "workflowId": workflow_id,
+            "tool": "BACKBONE",
+            "sessionId": session_ts
         },
-        "modelInput": {
-            "modelNameType": "IMAGEN_3_5"
+        "imageModelSettings": {
+            "imageModel": "IMAGEN_3_5",
+            "aspectRatio": "IMAGE_ASPECT_RATIO_LANDSCAPE"
         },
-        "aspectRatio": "IMAGE_ASPECT_RATIO_LANDSCAPE"
+        "mediaCategory": "MEDIA_CATEGORY_BOARD",
+        "prompt": full_prompt,
+        "seed": 0
     }
     
     headers = {
-        "authorization": f"Bearer {WHISK_API_KEY}",
+        "authorization": f"Bearer {token}",
         "content-type": "application/json",
         "origin": "https://labs.google",
-        "referer": "https://labs.google/fx/tools/whisk",
+        "referer": "https://labs.google/",
         "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
     }
     
     logger.info(f"Whisk image generation for scene {scene_num}")
     
     response = req.post(
-        "https://aisandbox-pa.googleapis.com/v1:runImageFx",
+        "https://aisandbox-pa.googleapis.com/v1/whisk:generateImage",
         json=json_data,
         headers=headers,
         timeout=120
@@ -259,7 +305,7 @@ def generate_image_whisk(prompt, output_path, session_id, scene_num):
     logger.info(f"Whisk response status for scene {scene_num}: {response.status_code}")
     
     if response.status_code != 200:
-        error_msg = f"Whisk API error {response.status_code}: {response.text[:200]}"
+        error_msg = f"Whisk API error {response.status_code}: {response.text[:300]}"
         logger.error(error_msg)
         emit_progress(session_id, 'generation', 0, error_msg)
         create_placeholder_image(prompt, output_path)
@@ -282,10 +328,17 @@ def generate_image_whisk(prompt, output_path, session_id, scene_num):
             with open(output_path, 'wb') as f:
                 f.write(image_bytes)
             
-            # Return the media ID for potential animation
+            # Return media info for potential animation
             media_id = img_data.get("mediaGenerationId", None)
+            img_prompt = img_data.get("prompt", prompt)
+            encoded_for_animate = img_data["encodedImage"]  # keep original for animate
             logger.info(f"Whisk generated image for scene {scene_num}: {output_path} (media_id: {media_id})")
-            return media_id
+            return {
+                "media_id": media_id,
+                "prompt": img_prompt,
+                "encoded_image": encoded_for_animate,
+                "workflow_id": img_data.get("workflowId", "")
+            }
     
     logger.warning(f"Whisk returned no images for scene {scene_num}")
     emit_progress(session_id, 'generation', 0, f'Whisk returned no images for scene {scene_num}')
@@ -293,66 +346,79 @@ def generate_image_whisk(prompt, output_path, session_id, scene_num):
     return None
 
 
-def animate_image_whisk(media_id, script, output_path, session_id, scene_num):
+def animate_image_whisk(image_info, script, output_path, session_id, scene_num):
     """Animate a Whisk-generated image into video using Whisk Animate (Veo)."""
     import requests as req
     
-    WHISK_API_KEY = os.environ.get('WHISK_API_KEY', '')
+    token = get_whisk_token(session_id)
     
     headers = {
-        "authorization": f"Bearer {WHISK_API_KEY}",
+        "authorization": f"Bearer {token}",
         "content-type": "application/json",
         "origin": "https://labs.google",
-        "referer": "https://labs.google/fx/tools/whisk",
+        "referer": "https://labs.google/",
         "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
     }
     
-    # Step 1: Start the animation
+    # Step 1: Start the video generation (exact payload from whisk-api library)
     animate_data = {
-        "mediaGenerationId": media_id,
-        "clientContext": {
-            "sessionId": str(uuid.uuid4()),
-            "tool": "WHISK"
+        "promptImageInput": {
+            "prompt": image_info.get("prompt", script),
+            "rawBytes": image_info.get("encoded_image", ""),
         },
-        "generationConfig": {
-            "prompt": script,
-            "modelNameType": "VEO_2"
-        }
+        "modelNameType": "VEO_3_1_I2V_12STEP",
+        "modelKey": "",
+        "userInstructions": script,
+        "loopVideo": False,
+        "clientContext": {
+            "workflowId": image_info.get("workflow_id", "")
+        },
     }
     
-    logger.info(f"Whisk Animate starting for scene {scene_num} (media_id: {media_id})")
+    logger.info(f"Whisk Animate starting for scene {scene_num}")
     
     response = req.post(
-        "https://aisandbox-pa.googleapis.com/v1:animateImage",
+        "https://aisandbox-pa.googleapis.com/v1/whisk:generateVideo",
         json=animate_data,
         headers=headers,
-        timeout=30
+        timeout=60
     )
     
     if response.status_code != 200:
-        logger.error(f"Whisk Animate failed for scene {scene_num}: {response.status_code} - {response.text[:200]}")
+        logger.error(f"Whisk Animate failed for scene {scene_num}: {response.status_code} - {response.text[:300]}")
         return False
     
     result = response.json()
-    operation_name = result.get("name", "")
+    
+    # Extract operation name for polling
+    operation_name = None
+    if "operation" in result and "operation" in result["operation"]:
+        operation_name = result["operation"]["operation"].get("name", "")
+    elif "name" in result:
+        operation_name = result["name"]
     
     if not operation_name:
-        logger.error(f"No operation name returned for scene {scene_num}")
+        logger.error(f"No operation name returned for scene {scene_num}: {json.dumps(result)[:300]}")
         return False
     
-    # Step 2: Poll for completion
-    max_wait = 300  # 5 minutes
-    waited = 0
+    logger.info(f"Whisk Animate operation: {operation_name}")
     
-    while waited < max_wait:
-        time.sleep(15)
-        waited += 15
+    # Step 2: Poll for completion using the correct status check endpoint
+    max_polls = 40  # ~80 seconds max
+    
+    for i in range(max_polls):
+        time.sleep(2)
         
         emit_progress(session_id, 'generation', 0,
-                     f'Animating scene {scene_num}... ({waited}s)')
+                     f'Animating scene {scene_num}... ({(i+1)*2}s)')
         
-        poll_response = req.get(
-            f"https://aisandbox-pa.googleapis.com/v1/{operation_name}",
+        poll_data = {
+            "operations": [{"operation": {"name": operation_name}}]
+        }
+        
+        poll_response = req.post(
+            "https://aisandbox-pa.googleapis.com/v1:runVideoFxSingleClipsStatusCheck",
+            json=poll_data,
             headers=headers,
             timeout=30
         )
@@ -362,26 +428,29 @@ def animate_image_whisk(media_id, script, output_path, session_id, scene_num):
             continue
         
         poll_result = poll_response.json()
+        status = poll_result.get("status", "")
         
-        if poll_result.get("done", False):
-            # Extract video
-            video_data = poll_result.get("response", {})
-            generated_videos = video_data.get("generatedVideos", [])
+        logger.info(f"Animate poll {i+1} for scene {scene_num}: status={status}")
+        
+        if status == "MEDIA_GENERATION_STATUS_SUCCESSFUL":
+            # Extract video bytes
+            raw_bytes = poll_result.get("rawBytes", "")
+            if raw_bytes:
+                if "," in raw_bytes:
+                    raw_bytes = raw_bytes.split(",", 1)[1]
+                
+                video_bytes = base64.b64decode(raw_bytes)
+                with open(output_path, 'wb') as f:
+                    f.write(video_bytes)
+                
+                logger.info(f"Whisk Animate generated video for scene {scene_num}: {output_path}")
+                return True
             
-            if generated_videos:
-                encoded_video = generated_videos[0].get("encodedVideo", "")
-                if encoded_video:
-                    if "," in encoded_video:
-                        encoded_video = encoded_video.split(",", 1)[1]
-                    
-                    video_bytes = base64.b64decode(encoded_video)
-                    with open(output_path, 'wb') as f:
-                        f.write(video_bytes)
-                    
-                    logger.info(f"Whisk Animate generated video for scene {scene_num}: {output_path}")
-                    return True
-            
-            logger.warning(f"Animation done but no video data for scene {scene_num}")
+            logger.warning(f"Animation successful but no rawBytes for scene {scene_num}")
+            return False
+        
+        if status == "MEDIA_GENERATION_STATUS_FAILED":
+            logger.error(f"Animation failed for scene {scene_num}")
             return False
     
     logger.warning(f"Whisk Animate timed out for scene {scene_num}")
@@ -590,13 +659,13 @@ def process_voiceover(filepath, session_id):
 
             # Step 1: Always generate a Whisk image first
             img_path = os.path.join(work_dir, f'scene_{scene_num:03d}.png')
-            media_id = generate_image_whisk(visual_desc, img_path, session_id, scene_num)
+            image_info = generate_image_whisk(visual_desc, img_path, session_id, scene_num)
 
-            if is_video and media_id:
+            if is_video and image_info:
                 # Step 2: Animate the image using Whisk Animate (Veo)
                 video_path = os.path.join(work_dir, f'scene_{scene_num:03d}_animated.mp4')
                 animated = animate_image_whisk(
-                    media_id, visual_desc, video_path, session_id, scene_num
+                    image_info, visual_desc, video_path, session_id, scene_num
                 )
                 
                 if animated:
