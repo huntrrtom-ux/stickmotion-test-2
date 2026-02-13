@@ -225,13 +225,13 @@ def generate_image_whisk(prompt, output_path, session_id, scene_num):
     
     json_data = {
         "userInput": {
-            "candidateCount": 1,
+            "candidatesCount": 1,
             "prompts": [full_prompt],
             "seed": 0
         },
         "clientContext": {
             "sessionId": session_id_whisk,
-            "tool": "TOOL_WHISK"
+            "tool": "WHISK"
         },
         "modelInput": {
             "modelNameType": "IMAGEN_3_5"
@@ -312,7 +312,7 @@ def animate_image_whisk(media_id, script, output_path, session_id, scene_num):
         "mediaGenerationId": media_id,
         "clientContext": {
             "sessionId": str(uuid.uuid4()),
-            "tool": "TOOL_WHISK"
+            "tool": "WHISK"
         },
         "generationConfig": {
             "prompt": script,
