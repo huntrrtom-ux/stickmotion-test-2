@@ -375,7 +375,7 @@ def animate_image_whisk(image_info, script, output_path, session_id, scene_num):
         },
     }
     
-    logger.info(f"Whisk Animate starting for scene {scene_num}")
+    logger.info(f"Whisk Animate starting for scene {scene_num}, rawBytes length: {len(animate_data['promptImageInput']['rawBytes'])}")
     
     response = req.post(
         "https://aisandbox-pa.googleapis.com/v1/whisk:generateVideo",
@@ -384,17 +384,26 @@ def animate_image_whisk(image_info, script, output_path, session_id, scene_num):
         timeout=60
     )
     
+    logger.info(f"Whisk Animate response for scene {scene_num}: status={response.status_code}")
+    
     if response.status_code != 200:
-        logger.error(f"Whisk Animate failed for scene {scene_num}: {response.status_code} - {response.text[:300]}")
+        logger.error(f"Whisk Animate failed for scene {scene_num}: {response.status_code} - {response.text[:500]}")
         return False
     
     result = response.json()
+    logger.info(f"Whisk Animate result keys for scene {scene_num}: {list(result.keys())}")
+    logger.info(f"Whisk Animate full result for scene {scene_num}: {json.dumps(result)[:500]}")
     
     # Extract operation name for polling
     operation_name = None
-    if "operation" in result and "operation" in result["operation"]:
-        operation_name = result["operation"]["operation"].get("name", "")
-    elif "name" in result:
+    if "operation" in result:
+        op = result["operation"]
+        logger.info(f"operation keys: {list(op.keys()) if isinstance(op, dict) else type(op)}")
+        if isinstance(op, dict) and "operation" in op:
+            operation_name = op["operation"].get("name", "")
+        elif isinstance(op, dict) and "name" in op:
+            operation_name = op.get("name", "")
+    if not operation_name and "name" in result:
         operation_name = result["name"]
     
     if not operation_name:
@@ -430,9 +439,17 @@ def animate_image_whisk(image_info, script, output_path, session_id, scene_num):
         poll_result = poll_response.json()
         status = poll_result.get("status", "")
         
+        # Log all keys on first poll and when status changes
+        if i == 0:
+            logger.info(f"Poll result keys for scene {scene_num}: {list(poll_result.keys())}")
+        
         logger.info(f"Animate poll {i+1} for scene {scene_num}: status={status}")
         
         if status == "MEDIA_GENERATION_STATUS_SUCCESSFUL":
+            # Log the full response structure (truncate rawBytes)
+            debug_keys = {k: (f"len={len(v)}" if k == "rawBytes" and v else str(v)[:200]) for k, v in poll_result.items()}
+            logger.info(f"SUCCESS response for scene {scene_num}: {json.dumps(debug_keys)}")
+            
             # Extract video bytes
             raw_bytes = poll_result.get("rawBytes", "")
             if raw_bytes:
@@ -652,7 +669,7 @@ def process_voiceover(filepath, session_id):
             start = scene['start_time']
             end = scene['end_time']
             duration = end - start
-            is_video = (i < 10)  # First 10 scenes get animated
+            is_video = (i == 0)  # ONLY first scene — 1 credit for debugging
             visual_desc = scene['visual_description']
 
             logger.info(f"Scene {scene_num}: start={start}, i={i}, is_video={is_video}")
