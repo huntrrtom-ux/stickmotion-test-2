@@ -790,6 +790,104 @@ def health():
     })
 
 
+@app.route('/test-animate')
+def test_animate():
+    """Test endpoint — generates 1 Whisk image and tries to animate it."""
+    import requests as req
+    
+    results = {"steps": []}
+    
+    try:
+        token = get_whisk_token("test")
+        results["steps"].append({"step": "token", "ok": True, "prefix": token[:20] + "..."})
+    except Exception as e:
+        results["steps"].append({"step": "token", "ok": False, "error": str(e)})
+        return jsonify(results)
+    
+    prompt = "A cartoon character with a big round white head standing in a sunny meadow"
+    wf_id = str(uuid.uuid4())
+    
+    img_payload = {
+        "clientContext": {"workflowId": wf_id, "tool": "BACKBONE", "sessionId": f";{int(time.time()*1000)}"},
+        "imageModelSettings": {"imageModel": "IMAGEN_3_5", "aspectRatio": "IMAGE_ASPECT_RATIO_LANDSCAPE"},
+        "mediaCategory": "MEDIA_CATEGORY_BOARD",
+        "prompt": prompt,
+        "seed": 0
+    }
+    headers = {
+        "authorization": f"Bearer {token}",
+        "content-type": "application/json",
+        "origin": "https://labs.google",
+        "referer": "https://labs.google/",
+        "user-agent": "Mozilla/5.0"
+    }
+    
+    try:
+        r = req.post("https://aisandbox-pa.googleapis.com/v1/whisk:generateImage", json=img_payload, headers=headers, timeout=60)
+        if r.status_code != 200:
+            results["steps"].append({"step": "image", "status": r.status_code, "error": r.text[:300]})
+            return jsonify(results)
+        
+        img_result = r.json()
+        encoded_image = None
+        for panel in img_result.get("imagePanels", []):
+            for img in panel.get("generatedImages", []):
+                encoded_image = img.get("encodedImage", "")
+                break
+        
+        results["steps"].append({"step": "image", "ok": True, "img_len": len(encoded_image or "")})
+        
+        if not encoded_image:
+            results["steps"].append({"step": "error", "msg": "no encoded image", "keys": str(img_result.keys())})
+            return jsonify(results)
+    except Exception as e:
+        results["steps"].append({"step": "image", "ok": False, "error": str(e)})
+        return jsonify(results)
+    
+    # Try animate
+    anim_payload = {
+        "promptImageInput": {"prompt": prompt, "rawBytes": encoded_image},
+        "modelNameType": "VEO_3_1_I2V_12STEP",
+        "modelKey": "",
+        "userInstructions": "gentle camera pan, character looks around",
+        "loopVideo": False,
+        "clientContext": {"workflowId": wf_id}
+    }
+    
+    try:
+        ar = req.post("https://aisandbox-pa.googleapis.com/v1/whisk:generateVideo", json=anim_payload, headers=headers, timeout=60)
+        if ar.status_code != 200:
+            results["steps"].append({"step": "animate", "status": ar.status_code, "error": ar.text[:500]})
+            return jsonify(results)
+        
+        anim_result = ar.json()
+        op_name = None
+        if "operation" in anim_result and "operation" in anim_result["operation"]:
+            op_name = anim_result["operation"]["operation"].get("name", "")
+        elif "name" in anim_result:
+            op_name = anim_result["name"]
+        
+        results["steps"].append({"step": "animate", "ok": True, "operation": op_name, "resp_keys": list(anim_result.keys())})
+        
+        if not op_name:
+            results["steps"].append({"step": "animate_detail", "full_response": str(anim_result)[:500]})
+            return jsonify(results)
+        
+        # Poll once
+        time.sleep(3)
+        poll = req.post("https://aisandbox-pa.googleapis.com/v1:runVideoFxSingleClipsStatusCheck",
+                       json={"operations": [{"operation": {"name": op_name}}]}, headers=headers, timeout=30)
+        if poll.status_code == 200:
+            pb = poll.json()
+            results["steps"].append({"step": "poll", "status": pb.get("status", "?"), "has_video": bool(pb.get("rawBytes"))})
+        else:
+            results["steps"].append({"step": "poll", "status_code": poll.status_code, "error": poll.text[:300]})
+    except Exception as e:
+        results["steps"].append({"step": "animate", "ok": False, "error": str(e)})
+    
+    return jsonify(results)
+
+
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8080))
     socketio.run(app, host='0.0.0.0', port=port, debug=False, allow_unsafe_werkzeug=True)
