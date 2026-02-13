@@ -213,18 +213,100 @@ def detect_scene_changes(transcript_data, session_id):
     return scenes['scenes']
 
 
-def generate_image_dalle(prompt, output_path, session_id, scene_num):
-    """Generate a still image using OpenAI DALL-E 3."""
+def generate_image_whisk(prompt, output_path, session_id, scene_num):
+    """Generate a still image using Google Whisk (unofficial API)."""
+    import requests as req
+    import base64
+    import uuid
+    
+    WHISK_API_KEY = os.environ.get('WHISK_API_KEY', '')
+    
+    try:
+        logger.info(f"Whisk image generation request for scene {scene_num}")
+        
+        session_id_whisk = str(uuid.uuid4())
+        
+        # Build the Whisk/ImageFX payload
+        full_prompt = f"{STYLE_PROMPT}\n\nSCENE: {prompt}"
+        
+        json_data = {
+            "userInput": {
+                "candidateCount": 1,
+                "prompts": [full_prompt],
+                "seed": 0
+            },
+            "clientContext": {
+                "sessionId": session_id_whisk,
+                "tool": "TOOL_WHISK"
+            },
+            "modelInput": {
+                "modelNameType": "IMAGEN_3_5"
+            },
+            "aspectRatio": "IMAGE_ASPECT_RATIO_LANDSCAPE"
+        }
+        
+        headers = {
+            "authorization": f"Bearer {WHISK_API_KEY}",
+            "content-type": "application/json",
+            "origin": "https://labs.google",
+            "referer": "https://labs.google/fx/tools/whisk",
+            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+        }
+        
+        response = req.post(
+            "https://aisandbox-pa.googleapis.com/v1:runImageFx",
+            json=json_data,
+            headers=headers,
+            timeout=120
+        )
+        
+        logger.info(f"Whisk response status for scene {scene_num}: {response.status_code}")
+        
+        if response.status_code == 200:
+            result = response.json()
+            
+            if "imagePanels" in result and result["imagePanels"]:
+                image_panel = result["imagePanels"][0]
+                if "generatedImages" in image_panel and image_panel["generatedImages"]:
+                    encoded_image = image_panel["generatedImages"][0]["encodedImage"]
+                    
+                    # Remove data URL prefix if present
+                    if "," in encoded_image:
+                        encoded_image = encoded_image.split(",", 1)[1]
+                    
+                    image_bytes = base64.b64decode(encoded_image)
+                    
+                    with open(output_path, 'wb') as f:
+                        f.write(image_bytes)
+                    
+                    logger.info(f"Whisk generated image for scene {scene_num}: {output_path} ({len(image_bytes)} bytes)")
+                    return True
+            
+            logger.warning(f"Whisk response had no images for scene {scene_num}: {result}")
+        else:
+            logger.error(f"Whisk API error for scene {scene_num}: {response.status_code} - {response.text[:200]}")
+        
+        # Fallback to DALL-E if Whisk fails
+        logger.info(f"Falling back to DALL-E for scene {scene_num}")
+        return generate_image_dalle_fallback(prompt, output_path, session_id, scene_num)
+
+    except Exception as e:
+        logger.error(f"Whisk generation failed for scene {scene_num}: {type(e).__name__}: {e}", exc_info=True)
+        return generate_image_dalle_fallback(prompt, output_path, session_id, scene_num)
+
+
+def generate_image_dalle_fallback(prompt, output_path, session_id, scene_num):
+    """Fallback: Generate a still image using OpenAI DALL-E 3."""
     try:
         client = openai.OpenAI(api_key=OPENAI_API_KEY)
 
-        # SCENE ACTION FIRST, style second — so DALL-E prioritizes the narrative
+        # SCENE ACTION FIRST, style second
         full_prompt = (
             f"SCENE: {prompt}\n\n"
             f"STYLE: {STYLE_PROMPT}"
         )
         
-        logger.info(f"DALL-E 3 image generation request for scene {scene_num}")
+        logger.info(f"DALL-E 3 fallback for scene {scene_num}")
 
         response = client.images.generate(
             model="dall-e-3",
@@ -236,7 +318,6 @@ def generate_image_dalle(prompt, output_path, session_id, scene_num):
 
         image_url = response.data[0].url
         
-        # Download the image
         import requests as req
         img_response = req.get(image_url, timeout=60)
         img_response.raise_for_status()
@@ -244,13 +325,13 @@ def generate_image_dalle(prompt, output_path, session_id, scene_num):
         with open(output_path, 'wb') as f:
             f.write(img_response.content)
         
-        logger.info(f"Generated DALL-E 3 image for scene {scene_num}: {output_path} ({len(img_response.content)} bytes)")
+        logger.info(f"DALL-E fallback succeeded for scene {scene_num}")
         return True
 
     except Exception as e:
-        logger.error(f"DALL-E 3 generation failed for scene {scene_num}: {type(e).__name__}: {e}", exc_info=True)
+        logger.error(f"DALL-E fallback also failed for scene {scene_num}: {e}")
         emit_progress(session_id, 'generation', 0,
-                     f'DALL-E error for scene {scene_num}: {str(e)[:100]}')
+                     f'All image generation failed for scene {scene_num}')
         create_placeholder_image(prompt, output_path)
         return True
 
@@ -515,9 +596,9 @@ def process_voiceover(filepath, session_id):
             emit_progress(session_id, 'generation', int(progress_base),
                          f'Generating visual for scene {scene_num}/{total_scenes}...')
 
-            # Generate still image with DALL-E 3 for all scenes
+            # Generate still image — Whisk primary, DALL-E fallback
             img_path = os.path.join(work_dir, f'scene_{scene_num:03d}.png')
-            generate_image_dalle(visual_desc, img_path, session_id, scene_num)
+            generate_image_whisk(visual_desc, img_path, session_id, scene_num)
 
             # Convert to video segment with Ken Burns effect
             video_path = os.path.join(work_dir, f'scene_{scene_num:03d}_video.mp4')
