@@ -214,187 +214,178 @@ def detect_scene_changes(transcript_data, session_id):
 
 
 def generate_image_whisk(prompt, output_path, session_id, scene_num):
-    """Generate a still image using Google Whisk (unofficial API)."""
+    """Generate a still image using Google Whisk (unofficial API). Whisk only — no fallback."""
     import requests as req
-    import base64
-    import uuid
     
     WHISK_API_KEY = os.environ.get('WHISK_API_KEY', '')
     
-    try:
-        logger.info(f"Whisk image generation request for scene {scene_num}")
-        
-        session_id_whisk = str(uuid.uuid4())
-        
-        # Build the Whisk/ImageFX payload
-        full_prompt = f"{STYLE_PROMPT}\n\nSCENE: {prompt}"
-        
-        json_data = {
-            "userInput": {
-                "candidateCount": 1,
-                "prompts": [full_prompt],
-                "seed": 0
-            },
-            "clientContext": {
-                "sessionId": session_id_whisk,
-                "tool": "TOOL_WHISK"
-            },
-            "modelInput": {
-                "modelNameType": "IMAGEN_3_5"
-            },
-            "aspectRatio": "IMAGE_ASPECT_RATIO_LANDSCAPE"
-        }
-        
-        headers = {
-            "authorization": f"Bearer {WHISK_API_KEY}",
-            "content-type": "application/json",
-            "origin": "https://labs.google",
-            "referer": "https://labs.google/fx/tools/whisk",
-            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
-        }
-        
-        response = req.post(
-            "https://aisandbox-pa.googleapis.com/v1:runImageFx",
-            json=json_data,
-            headers=headers,
-            timeout=120
-        )
-        
-        logger.info(f"Whisk response status for scene {scene_num}: {response.status_code}")
-        
-        if response.status_code == 200:
-            result = response.json()
-            
-            if "imagePanels" in result and result["imagePanels"]:
-                image_panel = result["imagePanels"][0]
-                if "generatedImages" in image_panel and image_panel["generatedImages"]:
-                    encoded_image = image_panel["generatedImages"][0]["encodedImage"]
-                    
-                    # Remove data URL prefix if present
-                    if "," in encoded_image:
-                        encoded_image = encoded_image.split(",", 1)[1]
-                    
-                    image_bytes = base64.b64decode(encoded_image)
-                    
-                    with open(output_path, 'wb') as f:
-                        f.write(image_bytes)
-                    
-                    logger.info(f"Whisk generated image for scene {scene_num}: {output_path} ({len(image_bytes)} bytes)")
-                    return True
-            
-            logger.warning(f"Whisk response had no images for scene {scene_num}: {result}")
-        else:
-            logger.error(f"Whisk API error for scene {scene_num}: {response.status_code} - {response.text[:200]}")
-        
-        # Fallback to DALL-E if Whisk fails
-        logger.info(f"Falling back to DALL-E for scene {scene_num}")
-        return generate_image_dalle_fallback(prompt, output_path, session_id, scene_num)
-
-    except Exception as e:
-        logger.error(f"Whisk generation failed for scene {scene_num}: {type(e).__name__}: {e}", exc_info=True)
-        return generate_image_dalle_fallback(prompt, output_path, session_id, scene_num)
-
-
-def generate_image_dalle_fallback(prompt, output_path, session_id, scene_num):
-    """Fallback: Generate a still image using OpenAI DALL-E 3."""
-    try:
-        client = openai.OpenAI(api_key=OPENAI_API_KEY)
-
-        # SCENE ACTION FIRST, style second
-        full_prompt = (
-            f"SCENE: {prompt}\n\n"
-            f"STYLE: {STYLE_PROMPT}"
-        )
-        
-        logger.info(f"DALL-E 3 fallback for scene {scene_num}")
-
-        response = client.images.generate(
-            model="dall-e-3",
-            prompt=full_prompt,
-            size="1792x1024",
-            quality="standard",
-            n=1,
-        )
-
-        image_url = response.data[0].url
-        
-        import requests as req
-        img_response = req.get(image_url, timeout=60)
-        img_response.raise_for_status()
-        
-        with open(output_path, 'wb') as f:
-            f.write(img_response.content)
-        
-        logger.info(f"DALL-E fallback succeeded for scene {scene_num}")
-        return True
-
-    except Exception as e:
-        logger.error(f"DALL-E fallback also failed for scene {scene_num}: {e}")
-        emit_progress(session_id, 'generation', 0,
-                     f'All image generation failed for scene {scene_num}')
+    session_id_whisk = str(uuid.uuid4())
+    
+    full_prompt = f"{STYLE_PROMPT}\n\nSCENE: {prompt}"
+    
+    json_data = {
+        "userInput": {
+            "candidateCount": 1,
+            "prompts": [full_prompt],
+            "seed": 0
+        },
+        "clientContext": {
+            "sessionId": session_id_whisk,
+            "tool": "TOOL_WHISK"
+        },
+        "modelInput": {
+            "modelNameType": "IMAGEN_3_5"
+        },
+        "aspectRatio": "IMAGE_ASPECT_RATIO_LANDSCAPE"
+    }
+    
+    headers = {
+        "authorization": f"Bearer {WHISK_API_KEY}",
+        "content-type": "application/json",
+        "origin": "https://labs.google",
+        "referer": "https://labs.google/fx/tools/whisk",
+        "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+    }
+    
+    logger.info(f"Whisk image generation for scene {scene_num}")
+    
+    response = req.post(
+        "https://aisandbox-pa.googleapis.com/v1:runImageFx",
+        json=json_data,
+        headers=headers,
+        timeout=120
+    )
+    
+    logger.info(f"Whisk response status for scene {scene_num}: {response.status_code}")
+    
+    if response.status_code != 200:
+        error_msg = f"Whisk API error {response.status_code}: {response.text[:200]}"
+        logger.error(error_msg)
+        emit_progress(session_id, 'generation', 0, error_msg)
         create_placeholder_image(prompt, output_path)
-        return True
-
-
-def generate_video_veo(prompt, output_path, duration_seconds, session_id, scene_num):
-    """Generate animated video using Google Veo API."""
-    try:
-        client = genai.Client(api_key=GOOGLE_API_KEY)
-
-        full_prompt = f"{VIDEO_STYLE_PROMPT} Action: {prompt}"
-
-        # Generate video with Veo
-        operation = client.models.generate_videos(
-            model="veo-2.0-generate-001",
-            prompt=full_prompt,
-            config=types.GenerateVideosConfig(
-                person_generation="allow_all",
-                aspect_ratio="16:9",
-                number_of_videos=1,
-            )
-        )
-
-        # Poll for completion
-        max_wait = 300  # 5 minutes max
-        waited = 0
-        while not operation.done and waited < max_wait:
-            time.sleep(10)
-            waited += 10
-            operation = client.operations.get(operation)
-            emit_progress(session_id, 'video_generation', 
-                         min(30 + (waited / max_wait * 40), 70),
-                         f'Generating video for scene {scene_num}... ({waited}s)')
-
-        if operation.done and operation.response and operation.response.generated_videos:
-            video = operation.response.generated_videos[0]
-            # Download the video
-            video_data = client.files.download(file=video.video)
+        return None
+    
+    result = response.json()
+    
+    if "imagePanels" in result and result["imagePanels"]:
+        image_panel = result["imagePanels"][0]
+        if "generatedImages" in image_panel and image_panel["generatedImages"]:
+            img_data = image_panel["generatedImages"][0]
+            encoded_image = img_data["encodedImage"]
             
-            # video_data is a generator of bytes, collect all chunks
-            video_bytes = b""
-            for chunk in video_data:
-                video_bytes += chunk
+            # Remove data URL prefix if present
+            if "," in encoded_image:
+                encoded_image = encoded_image.split(",", 1)[1]
+            
+            image_bytes = base64.b64decode(encoded_image)
             
             with open(output_path, 'wb') as f:
-                f.write(video_bytes)
+                f.write(image_bytes)
             
-            logger.info(f"Generated video for scene {scene_num}: {output_path}")
-            return True
-        else:
-            logger.warning(f"Veo generation incomplete for scene {scene_num}, using image fallback")
-            # Fallback to still image
-            img_path = output_path.replace('.mp4', '.png')
-            generate_image_imagen(prompt, img_path, session_id, scene_num)
-            create_video_from_image(img_path, output_path, duration_seconds)
-            return True
+            # Return the media ID for potential animation
+            media_id = img_data.get("mediaGenerationId", None)
+            logger.info(f"Whisk generated image for scene {scene_num}: {output_path} (media_id: {media_id})")
+            return media_id
+    
+    logger.warning(f"Whisk returned no images for scene {scene_num}")
+    emit_progress(session_id, 'generation', 0, f'Whisk returned no images for scene {scene_num}')
+    create_placeholder_image(prompt, output_path)
+    return None
 
-    except Exception as e:
-        logger.error(f"Veo generation failed for scene {scene_num}: {e}")
-        # Fallback: generate still image and convert to video
-        img_path = output_path.replace('.mp4', '_fallback.png')
-        generate_image_imagen(prompt, img_path, session_id, scene_num)
-        create_video_from_image(img_path, output_path, duration_seconds)
-        return True
+
+def animate_image_whisk(media_id, script, output_path, session_id, scene_num):
+    """Animate a Whisk-generated image into video using Whisk Animate (Veo)."""
+    import requests as req
+    
+    WHISK_API_KEY = os.environ.get('WHISK_API_KEY', '')
+    
+    headers = {
+        "authorization": f"Bearer {WHISK_API_KEY}",
+        "content-type": "application/json",
+        "origin": "https://labs.google",
+        "referer": "https://labs.google/fx/tools/whisk",
+        "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+    }
+    
+    # Step 1: Start the animation
+    animate_data = {
+        "mediaGenerationId": media_id,
+        "clientContext": {
+            "sessionId": str(uuid.uuid4()),
+            "tool": "TOOL_WHISK"
+        },
+        "generationConfig": {
+            "prompt": script,
+            "modelNameType": "VEO_2"
+        }
+    }
+    
+    logger.info(f"Whisk Animate starting for scene {scene_num} (media_id: {media_id})")
+    
+    response = req.post(
+        "https://aisandbox-pa.googleapis.com/v1:animateImage",
+        json=animate_data,
+        headers=headers,
+        timeout=30
+    )
+    
+    if response.status_code != 200:
+        logger.error(f"Whisk Animate failed for scene {scene_num}: {response.status_code} - {response.text[:200]}")
+        return False
+    
+    result = response.json()
+    operation_name = result.get("name", "")
+    
+    if not operation_name:
+        logger.error(f"No operation name returned for scene {scene_num}")
+        return False
+    
+    # Step 2: Poll for completion
+    max_wait = 300  # 5 minutes
+    waited = 0
+    
+    while waited < max_wait:
+        time.sleep(15)
+        waited += 15
+        
+        emit_progress(session_id, 'generation', 0,
+                     f'Animating scene {scene_num}... ({waited}s)')
+        
+        poll_response = req.get(
+            f"https://aisandbox-pa.googleapis.com/v1/{operation_name}",
+            headers=headers,
+            timeout=30
+        )
+        
+        if poll_response.status_code != 200:
+            logger.warning(f"Poll failed for scene {scene_num}: {poll_response.status_code}")
+            continue
+        
+        poll_result = poll_response.json()
+        
+        if poll_result.get("done", False):
+            # Extract video
+            video_data = poll_result.get("response", {})
+            generated_videos = video_data.get("generatedVideos", [])
+            
+            if generated_videos:
+                encoded_video = generated_videos[0].get("encodedVideo", "")
+                if encoded_video:
+                    if "," in encoded_video:
+                        encoded_video = encoded_video.split(",", 1)[1]
+                    
+                    video_bytes = base64.b64decode(encoded_video)
+                    with open(output_path, 'wb') as f:
+                        f.write(video_bytes)
+                    
+                    logger.info(f"Whisk Animate generated video for scene {scene_num}: {output_path}")
+                    return True
+            
+            logger.warning(f"Animation done but no video data for scene {scene_num}")
+            return False
+    
+    logger.warning(f"Whisk Animate timed out for scene {scene_num}")
+    return False
 
 
 def create_placeholder_image(prompt, output_path):
@@ -590,20 +581,53 @@ def process_voiceover(filepath, session_id):
             start = scene['start_time']
             end = scene['end_time']
             duration = end - start
+            is_video = scene.get('is_video', start < 30)
             visual_desc = scene['visual_description']
 
             progress_base = 20 + (60 * i / total_scenes)
             emit_progress(session_id, 'generation', int(progress_base),
                          f'Generating visual for scene {scene_num}/{total_scenes}...')
 
-            # Generate still image — Whisk primary, DALL-E fallback
+            # Step 1: Always generate a Whisk image first
             img_path = os.path.join(work_dir, f'scene_{scene_num:03d}.png')
-            generate_image_whisk(visual_desc, img_path, session_id, scene_num)
+            media_id = generate_image_whisk(visual_desc, img_path, session_id, scene_num)
 
-            # Convert to video segment with Ken Burns effect
-            video_path = os.path.join(work_dir, f'scene_{scene_num:03d}_video.mp4')
-            create_video_from_image(img_path, video_path, duration)
-            scene_videos.append(video_path)
+            if is_video and media_id:
+                # Step 2: Animate the image using Whisk Animate (Veo)
+                video_path = os.path.join(work_dir, f'scene_{scene_num:03d}_animated.mp4')
+                animated = animate_image_whisk(
+                    media_id, visual_desc, video_path, session_id, scene_num
+                )
+                
+                if animated:
+                    # Trim to exact duration
+                    trimmed_path = os.path.join(work_dir, f'scene_{scene_num:03d}_trimmed.mp4')
+                    try:
+                        cmd = [
+                            'ffmpeg', '-y',
+                            '-i', video_path,
+                            '-t', str(duration),
+                            '-c:v', 'libx264',
+                            '-pix_fmt', 'yuv420p',
+                            '-r', '25',
+                            '-vf', 'scale=1280:720',
+                            '-threads', '1',
+                            trimmed_path
+                        ]
+                        subprocess.run(cmd, check=True, capture_output=True, timeout=120)
+                        scene_videos.append(trimmed_path)
+                    except Exception:
+                        scene_videos.append(video_path)
+                else:
+                    # Animation failed — use still image with Ken Burns
+                    video_path = os.path.join(work_dir, f'scene_{scene_num:03d}_video.mp4')
+                    create_video_from_image(img_path, video_path, duration)
+                    scene_videos.append(video_path)
+            else:
+                # Still image scene — Ken Burns effect
+                video_path = os.path.join(work_dir, f'scene_{scene_num:03d}_video.mp4')
+                create_video_from_image(img_path, video_path, duration)
+                scene_videos.append(video_path)
 
             emit_progress(session_id, 'generation', int(progress_base + (60 / total_scenes)),
                          f'Scene {scene_num}/{total_scenes} complete')
