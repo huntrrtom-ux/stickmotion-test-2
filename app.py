@@ -873,15 +873,33 @@ def test_animate():
             results["steps"].append({"step": "animate_detail", "full_response": str(anim_result)[:500]})
             return jsonify(results)
         
-        # Poll once
-        time.sleep(3)
-        poll = req.post("https://aisandbox-pa.googleapis.com/v1:runVideoFxSingleClipsStatusCheck",
-                       json={"operations": [{"operation": {"name": op_name}}]}, headers=headers, timeout=30)
-        if poll.status_code == 200:
-            pb = poll.json()
-            results["steps"].append({"step": "poll", "status": pb.get("status", "?"), "has_video": bool(pb.get("rawBytes"))})
-        else:
-            results["steps"].append({"step": "poll", "status_code": poll.status_code, "error": poll.text[:300]})
+        # Poll until done (max 60 polls = 2 min)
+        for poll_i in range(60):
+            time.sleep(2)
+            poll = req.post("https://aisandbox-pa.googleapis.com/v1:runVideoFxSingleClipsStatusCheck",
+                           json={"operations": [{"operation": {"name": op_name}}]}, headers=headers, timeout=30)
+            if poll.status_code == 200:
+                pb = poll.json()
+                status = pb.get("status", "?")
+                if status == "MEDIA_GENERATION_STATUS_SUCCESSFUL":
+                    # Show full structure (but truncate rawBytes)
+                    debug_pb = {}
+                    for k, v in pb.items():
+                        if k == "rawBytes":
+                            debug_pb[k] = f"(length={len(v)})" if v else "EMPTY"
+                        else:
+                            debug_pb[k] = str(v)[:200]
+                    results["steps"].append({"step": "poll_done", "poll_num": poll_i+1, "status": status, "response_structure": debug_pb, "all_keys": list(pb.keys())})
+                    return jsonify(results)
+                elif status == "MEDIA_GENERATION_STATUS_FAILED":
+                    results["steps"].append({"step": "poll_failed", "poll_num": poll_i+1, "full_response": str(pb)[:500]})
+                    return jsonify(results)
+                # Still active, continue polling
+            else:
+                results["steps"].append({"step": "poll_error", "poll_num": poll_i+1, "status_code": poll.status_code, "error": poll.text[:300]})
+                return jsonify(results)
+        
+        results["steps"].append({"step": "poll_timeout", "message": "Still generating after 2 minutes"})
     except Exception as e:
         results["steps"].append({"step": "animate", "ok": False, "error": str(e)})
     
