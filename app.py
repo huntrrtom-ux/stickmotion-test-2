@@ -695,7 +695,7 @@ def process_voiceover(filepath, session_id):
             start = scene['start_time']
             end = scene['end_time']
             duration = end - start
-            is_video = True  # Always animate every scene
+            is_video = (i == 0)  # Test: only first scene
             visual_desc = scene['visual_description']
 
             logger.info(f"Scene {scene_num}: start={start}, i={i}, is_video={is_video}")
