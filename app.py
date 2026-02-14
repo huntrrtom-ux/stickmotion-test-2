@@ -832,6 +832,10 @@ def health():
         'google_configured': bool(GOOGLE_API_KEY)
     })
 
+@app.route('/version')
+def version():
+    return jsonify({"version": "v33", "animate": "first_scene_only", "retry": True})
+
 
 @app.route('/test-animate')
 def test_animate():
