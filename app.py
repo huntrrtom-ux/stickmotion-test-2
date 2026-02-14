@@ -683,7 +683,7 @@ def process_voiceover(filepath, session_id):
             start = scene['start_time']
             end = scene['end_time']
             duration = end - start
-            is_video = (i == 0)  # ONLY first scene — 1 credit for debugging
+            is_video = scene.get('is_video', False)  # Use GPT scene detection
             visual_desc = scene['visual_description']
 
             logger.info(f"Scene {scene_num}: start={start}, i={i}, is_video={is_video}")
