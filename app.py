@@ -391,14 +391,26 @@ def animate_image_whisk(image_info, script, output_path, session_id, scene_num):
     
     logger.info(f"Whisk Animate starting for scene {scene_num}, rawBytes length: {len(animate_data['promptImageInput']['rawBytes'])}, mediaGenerationId: {animate_data['promptImageInput']['mediaGenerationId'][:50] if animate_data['promptImageInput']['mediaGenerationId'] else 'NONE'}")
     
-    response = req.post(
-        "https://aisandbox-pa.googleapis.com/v1/whisk:generateVideo",
-        json=animate_data,
-        headers=headers,
-        timeout=60
-    )
-    
-    logger.info(f"Whisk Animate response for scene {scene_num}: status={response.status_code}")
+    # Retry with backoff for rate limits
+    max_retries = 5
+    response = None
+    for attempt in range(max_retries):
+        response = req.post(
+            "https://aisandbox-pa.googleapis.com/v1/whisk:generateVideo",
+            json=animate_data,
+            headers=headers,
+            timeout=60
+        )
+        
+        logger.info(f"Whisk Animate response for scene {scene_num}: status={response.status_code} (attempt {attempt+1})")
+        
+        if response.status_code == 429:
+            wait_time = 30 * (attempt + 1)  # 30s, 60s, 90s, 120s, 150s
+            logger.warning(f"Rate limited on scene {scene_num}, waiting {wait_time}s before retry...")
+            emit_progress(session_id, 'generation', 0, f'Rate limited, waiting {wait_time}s...')
+            time.sleep(wait_time)
+            continue
+        break
     
     if response.status_code != 200:
         logger.error(f"Whisk Animate failed for scene {scene_num}: {response.status_code} - {response.text[:500]}")
