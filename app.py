@@ -676,14 +676,14 @@ def process_voiceover(filepath, session_id):
         scene_videos = []
         total_scenes = len(scenes)
         animated_count = 0
-        MAX_ANIMATED_SCENES = 10  # Limit for testing
+        MAX_ANIMATED_SCENES = 999  # No limit
 
         for i, scene in enumerate(scenes):
             scene_num = scene.get('scene_number', i + 1)
             start = scene['start_time']
             end = scene['end_time']
             duration = end - start
-            is_video = scene.get('is_video', False)  # Use GPT scene detection
+            is_video = True  # Always animate every scene
             visual_desc = scene['visual_description']
 
             logger.info(f"Scene {scene_num}: start={start}, i={i}, is_video={is_video}")
