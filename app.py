@@ -360,22 +360,36 @@ def animate_image_whisk(image_info, script, output_path, session_id, scene_num):
         "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
     }
     
-    # Step 1: Start the video generation (exact payload from whisk-api library)
+    # Step 1: Start the video generation (exact payload from browser Network tab)
+    session_ts = f";{int(time.time() * 1000)}"
+    
+    # Build prompt with "ORIGINAL IMAGE DESCRIPTION:" prefix (matches browser)
+    original_prompt = image_info.get("prompt", script)
+    prefixed_prompt = f"ORIGINAL IMAGE DESCRIPTION:\n{original_prompt}"
+    
+    # Ensure rawBytes is clean base64 (strip data URL prefix if present)
+    raw_bytes_for_anim = image_info.get("encoded_image", "")
+    if raw_bytes_for_anim and "," in raw_bytes_for_anim[:100]:
+        raw_bytes_for_anim = raw_bytes_for_anim.split(",", 1)[1]
+    
     animate_data = {
-        "promptImageInput": {
-            "prompt": image_info.get("prompt", script),
-            "rawBytes": image_info.get("encoded_image", ""),
-        },
-        "modelNameType": "VEO_3_1_I2V_12STEP",
-        "modelKey": "",
-        "userInstructions": script,
-        "loopVideo": False,
         "clientContext": {
-            "workflowId": image_info.get("workflow_id", "")
+            "sessionId": session_ts,
+            "tool": "BACKBONE",
+            "workflowId": image_info.get("workflow_id", str(uuid.uuid4()))
         },
+        "loopVideo": False,
+        "modelKey": "",
+        "modelNameType": "VEO_3_1_I2V_12STEP",
+        "promptImageInput": {
+            "mediaGenerationId": image_info.get("media_id", ""),
+            "prompt": prefixed_prompt,
+            "rawBytes": raw_bytes_for_anim,
+        },
+        "userInstructions": "",
     }
     
-    logger.info(f"Whisk Animate starting for scene {scene_num}, rawBytes length: {len(animate_data['promptImageInput']['rawBytes'])}")
+    logger.info(f"Whisk Animate starting for scene {scene_num}, rawBytes length: {len(animate_data['promptImageInput']['rawBytes'])}, mediaGenerationId: {animate_data['promptImageInput']['mediaGenerationId'][:50] if animate_data['promptImageInput']['mediaGenerationId'] else 'NONE'}")
     
     response = req.post(
         "https://aisandbox-pa.googleapis.com/v1/whisk:generateVideo",
@@ -847,12 +861,14 @@ def test_animate():
         
         img_result = r.json()
         encoded_image = None
+        media_gen_id = ""
         for panel in img_result.get("imagePanels", []):
             for img in panel.get("generatedImages", []):
                 encoded_image = img.get("encodedImage", "")
+                media_gen_id = img.get("mediaGenerationId", "")
                 break
         
-        results["steps"].append({"step": "image", "ok": True, "img_len": len(encoded_image or "")})
+        results["steps"].append({"step": "image", "ok": True, "img_len": len(encoded_image or ""), "media_id": media_gen_id[:50] if media_gen_id else "NONE"})
         
         if not encoded_image:
             results["steps"].append({"step": "error", "msg": "no encoded image", "keys": str(img_result.keys())})
@@ -861,14 +877,22 @@ def test_animate():
         results["steps"].append({"step": "image", "ok": False, "error": str(e)})
         return jsonify(results)
     
-    # Try animate
+    # Try animate (exact payload from browser Network tab)
     anim_payload = {
-        "promptImageInput": {"prompt": prompt, "rawBytes": encoded_image},
-        "modelNameType": "VEO_3_1_I2V_12STEP",
-        "modelKey": "",
-        "userInstructions": "gentle camera pan, character looks around",
+        "clientContext": {
+            "sessionId": sess_id,
+            "tool": "BACKBONE",
+            "workflowId": wf_id
+        },
         "loopVideo": False,
-        "clientContext": {"workflowId": wf_id}
+        "modelKey": "",
+        "modelNameType": "VEO_3_1_I2V_12STEP",
+        "promptImageInput": {
+            "mediaGenerationId": media_gen_id,
+            "prompt": f"ORIGINAL IMAGE DESCRIPTION:\n{prompt}",
+            "rawBytes": encoded_image
+        },
+        "userInstructions": "",
     }
     
     try:
