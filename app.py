@@ -564,34 +564,23 @@ def create_placeholder_image(prompt, output_path):
 
 
 def create_video_from_image(image_path, video_path, duration):
-    """Convert a still image to a video with smooth slow zoom using scale + crop."""
+    """Convert a still image to a video with smooth slow zoom."""
     try:
-        # Resize image large so we have room to zoom
-        resized_path = image_path.replace('.png', '_resized.png')
-        resize_cmd = [
-            'ffmpeg', '-y',
-            '-i', image_path,
-            '-vf', 'scale=2560:1440',
-            resized_path
-        ]
-        subprocess.run(resize_cmd, check=True, capture_output=True, timeout=60)
-        
         fps = 24
-        total_frames = int(duration * fps)
         
-        # Scale from 1.0 to 1.1 smoothly, then crop center to output size
-        # This cannot shake because we only change scale, never position
-        scale_filter = (
-            f"loop=loop={total_frames}:size=1:start=0,"
-            f"setpts=N/{fps}/TB,"
-            f"scale='trunc(2560*(1+0.1*t/{duration})/2)*2:trunc(1440*(1+0.1*t/{duration})/2)*2',"
+        # Use loop input, scale up gradually over time, crop center
+        # Image scales from 1280x720 to 1408x792 (110%), always cropping center 1280x720
+        zoom_filter = (
+            f"scale=2560:1440,"
+            f"scale='2560+256*t/{duration}:1440+144*t/{duration}',"
             f"crop=1280:720"
         )
         
         cmd = [
             'ffmpeg', '-y',
-            '-i', resized_path,
-            '-vf', scale_filter,
+            '-loop', '1',
+            '-i', image_path,
+            '-vf', zoom_filter,
             '-c:v', 'libx264',
             '-preset', 'ultrafast',
             '-t', str(duration),
@@ -601,9 +590,6 @@ def create_video_from_image(image_path, video_path, duration):
             video_path
         ]
         subprocess.run(cmd, check=True, capture_output=True, timeout=300)
-        
-        if os.path.exists(resized_path):
-            os.remove(resized_path)
     except Exception as e:
         logger.error(f"Smooth zoom failed: {e}, trying static fallback")
         cmd = [
