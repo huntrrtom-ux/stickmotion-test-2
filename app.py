@@ -700,6 +700,29 @@ def process_voiceover(filepath, session_id):
                 'audio_duration': audio_duration
             }, f, indent=2)
 
+        # Step 3.5: Merge short scenes (minimum 3 seconds)
+        MIN_SCENE_DURATION = 3.0
+        merged_scenes = []
+        for scene in scenes:
+            if merged_scenes and (scene['end_time'] - merged_scenes[-1]['start_time']) <= MIN_SCENE_DURATION * 2:
+                prev = merged_scenes[-1]
+                if (prev['end_time'] - prev['start_time']) < MIN_SCENE_DURATION:
+                    # Merge with previous: extend end time and combine description
+                    prev['end_time'] = scene['end_time']
+                    prev['visual_description'] = prev['visual_description'] + " " + scene['visual_description']
+                    continue
+            merged_scenes.append(scene)
+        
+        # Also enforce minimum on last scene
+        if merged_scenes and (merged_scenes[-1]['end_time'] - merged_scenes[-1]['start_time']) < MIN_SCENE_DURATION:
+            if len(merged_scenes) >= 2:
+                merged_scenes[-2]['end_time'] = merged_scenes[-1]['end_time']
+                merged_scenes[-2]['visual_description'] += " " + merged_scenes[-1]['visual_description']
+                merged_scenes.pop()
+        
+        logger.info(f"Merged {len(scenes)} scenes into {len(merged_scenes)} scenes (min {MIN_SCENE_DURATION}s)")
+        scenes = merged_scenes
+
         # Step 4: Generate visuals for each scene
         scene_videos = []
         total_scenes = len(scenes)
@@ -711,7 +734,7 @@ def process_voiceover(filepath, session_id):
             start = scene['start_time']
             end = scene['end_time']
             duration = end - start
-            is_video = (i == 0)  # Test: only first scene
+            is_video = (start < 30.0)  # Animate all scenes in the first 30 seconds
             visual_desc = scene['visual_description']
 
             logger.info(f"Scene {scene_num}: start={start}, i={i}, is_video={is_video}")
