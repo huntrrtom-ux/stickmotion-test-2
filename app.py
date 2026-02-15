@@ -472,24 +472,40 @@ def animate_image_whisk(image_info, script, output_path, session_id, scene_num):
         logger.info(f"Animate poll {i+1} for scene {scene_num}: status={status}")
         
         if status == "MEDIA_GENERATION_STATUS_SUCCESSFUL":
-            # Log the full response structure (truncate rawBytes)
-            debug_keys = {k: (f"len={len(v)}" if k == "rawBytes" and v else str(v)[:200]) for k, v in poll_result.items()}
+            # Log the full response structure
+            debug_keys = {k: (f"len={len(v)}" if k == "rawBytes" and v else str(v)[:300]) for k, v in poll_result.items()}
             logger.info(f"SUCCESS response for scene {scene_num}: {json.dumps(debug_keys)}")
             
-            # Extract video bytes
+            # Extract rawBytes - check multiple locations
+            raw_bytes = ""
+            
+            # Location 1: top level
             raw_bytes = poll_result.get("rawBytes", "")
+            
+            # Location 2: inside operations[0] (this is where Whisk actually puts it)
+            if not raw_bytes:
+                try:
+                    ops = poll_result.get("operations", [])
+                    if isinstance(ops, str):
+                        import ast
+                        ops = ast.literal_eval(ops)
+                    if isinstance(ops, list) and len(ops) > 0:
+                        raw_bytes = ops[0].get("rawBytes", "")
+                        if raw_bytes:
+                            logger.info(f"Found rawBytes in operations[0] for scene {scene_num}, length: {len(raw_bytes)}")
+                except Exception as e:
+                    logger.error(f"Error extracting rawBytes from operations for scene {scene_num}: {e}")
+            
             if raw_bytes:
                 if "," in raw_bytes:
                     raw_bytes = raw_bytes.split(",", 1)[1]
-                
                 video_bytes = base64.b64decode(raw_bytes)
                 with open(output_path, 'wb') as f:
                     f.write(video_bytes)
-                
-                logger.info(f"Whisk Animate generated video for scene {scene_num}: {output_path}")
+                logger.info(f"Whisk Animate generated video for scene {scene_num}: {output_path} ({len(video_bytes)} bytes)")
                 return True
             
-            logger.warning(f"Animation successful but no rawBytes for scene {scene_num}")
+            logger.warning(f"Animation successful but no rawBytes found for scene {scene_num}")
             return False
         
         if status == "MEDIA_GENERATION_STATUS_FAILED":
