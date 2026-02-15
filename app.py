@@ -576,12 +576,12 @@ def create_video_from_image(image_path, video_path, duration):
         ]
         subprocess.run(resize_cmd, check=True, capture_output=True, timeout=60)
         
-        # Slow zoom effect: start at 100%, zoom to 110% over the duration
-        # zoompan: z zooms from 1.0 to 1.1, d=duration in frames
+        # Slow zoom: 1.0 to 1.1 over duration, rounded coords to prevent shaking
         fps = 15
         total_frames = int(duration * fps)
         zoom_filter = (
-            f"zoompan=z='1+0.1*on/{total_frames}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
+            f"zoompan=z='1+0.1*on/{total_frames}'"
+            f":x='trunc((iw-iw/zoom)/2)':y='trunc((ih-ih/zoom)/2)'"
             f":d={total_frames}:s=1280x720:fps={fps}"
         )
         
