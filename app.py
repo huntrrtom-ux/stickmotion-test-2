@@ -564,30 +564,36 @@ def create_placeholder_image(prompt, output_path):
 
 
 def create_video_from_image(image_path, video_path, duration):
-    """Convert a still image to a video using ffmpeg with low memory usage."""
+    """Convert a still image to a video using ffmpeg with slow zoom (Ken Burns effect)."""
     try:
-        # First resize the image to 1280x720 to reduce memory
+        # First resize the image to 1920x1080 for zoom headroom
         resized_path = image_path.replace('.png', '_resized.png')
         resize_cmd = [
             'ffmpeg', '-y',
             '-i', image_path,
-            '-vf', 'scale=1280:720',
+            '-vf', 'scale=1920:1080',
             resized_path
         ]
         subprocess.run(resize_cmd, check=True, capture_output=True, timeout=60)
         
-        # Simple static image to video — minimal memory usage
+        # Slow zoom effect: start at 100%, zoom to 110% over the duration
+        # zoompan: z zooms from 1.0 to 1.1, d=duration in frames
+        fps = 15
+        total_frames = int(duration * fps)
+        zoom_filter = (
+            f"zoompan=z='1+0.1*on/{total_frames}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
+            f":d={total_frames}:s=1280x720:fps={fps}"
+        )
+        
         cmd = [
             'ffmpeg', '-y',
-            '-loop', '1',
             '-i', resized_path,
+            '-vf', zoom_filter,
             '-c:v', 'libx264',
             '-preset', 'ultrafast',
-            '-tune', 'stillimage',
             '-t', str(duration),
             '-pix_fmt', 'yuv420p',
-            '-vf', 'scale=1280:720',
-            '-r', '15',
+            '-r', str(fps),
             '-threads', '1',
             video_path
         ]
@@ -597,7 +603,7 @@ def create_video_from_image(image_path, video_path, duration):
         if os.path.exists(resized_path):
             os.remove(resized_path)
     except Exception as e:
-        logger.error(f"Video from image failed: {e}, trying minimal approach")
+        logger.error(f"Ken Burns zoom failed: {e}, trying static fallback")
         cmd = [
             'ffmpeg', '-y',
             '-loop', '1',
