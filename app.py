@@ -564,31 +564,34 @@ def create_placeholder_image(prompt, output_path):
 
 
 def create_video_from_image(image_path, video_path, duration):
-    """Convert a still image to a video using ffmpeg with slow zoom (Ken Burns effect)."""
+    """Convert a still image to a video with smooth slow zoom using scale + crop."""
     try:
-        # First resize the image to 1920x1080 for zoom headroom
+        # Resize image large so we have room to zoom
         resized_path = image_path.replace('.png', '_resized.png')
         resize_cmd = [
             'ffmpeg', '-y',
             '-i', image_path,
-            '-vf', 'scale=1920:1080',
+            '-vf', 'scale=2560:1440',
             resized_path
         ]
         subprocess.run(resize_cmd, check=True, capture_output=True, timeout=60)
         
-        # Slow zoom: 1.0 to 1.1 over duration, rounded coords to prevent shaking
-        fps = 15
+        fps = 24
         total_frames = int(duration * fps)
-        zoom_filter = (
-            f"zoompan=z='1+0.1*on/{total_frames}'"
-            f":x='trunc((iw-iw/zoom)/2)':y='trunc((ih-ih/zoom)/2)'"
-            f":d={total_frames}:s=1280x720:fps={fps}"
+        
+        # Scale from 1.0 to 1.1 smoothly, then crop center to output size
+        # This cannot shake because we only change scale, never position
+        scale_filter = (
+            f"loop=loop={total_frames}:size=1:start=0,"
+            f"setpts=N/{fps}/TB,"
+            f"scale='trunc(2560*(1+0.1*t/{duration})/2)*2:trunc(1440*(1+0.1*t/{duration})/2)*2',"
+            f"crop=1280:720"
         )
         
         cmd = [
             'ffmpeg', '-y',
             '-i', resized_path,
-            '-vf', zoom_filter,
+            '-vf', scale_filter,
             '-c:v', 'libx264',
             '-preset', 'ultrafast',
             '-t', str(duration),
@@ -597,13 +600,12 @@ def create_video_from_image(image_path, video_path, duration):
             '-threads', '1',
             video_path
         ]
-        subprocess.run(cmd, check=True, capture_output=True, timeout=180)
+        subprocess.run(cmd, check=True, capture_output=True, timeout=300)
         
-        # Clean up resized image
         if os.path.exists(resized_path):
             os.remove(resized_path)
     except Exception as e:
-        logger.error(f"Ken Burns zoom failed: {e}, trying static fallback")
+        logger.error(f"Smooth zoom failed: {e}, trying static fallback")
         cmd = [
             'ffmpeg', '-y',
             '-loop', '1',
@@ -612,7 +614,7 @@ def create_video_from_image(image_path, video_path, duration):
             '-preset', 'ultrafast',
             '-t', str(duration),
             '-pix_fmt', 'yuv420p',
-            '-vf', 'scale=640:360',
+            '-vf', 'scale=1280:720',
             '-r', '10',
             '-threads', '1',
             video_path
